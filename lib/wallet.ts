@@ -2,7 +2,7 @@
 import { create } from 'zustand';
 import { TezosToolkit } from '@taquito/taquito';
 import { BeaconWallet } from '@taquito/beacon-wallet';
-import { BeaconEvent } from '@airgap/beacon-dapp';
+import { BeaconEvent, ColorMode } from '@airgap/beacon-dapp';
 import { CFG, NETWORK_NAME } from './config';
 import { michelsonToAlias } from './sdk';
 
@@ -24,6 +24,7 @@ const makeWallet = (): BeaconWallet =>
     name: 'objkt EVM-pay',
     // previewnet is a custom network for the wallet.
     network: { type: 'custom' as never, name: NETWORK_NAME, rpcUrl: CFG.tezRpc },
+    colorMode: ColorMode.DARK, // match the dApp's dark theme in the Beacon pairing/permission UI
   });
 
 const bind = (wallet: BeaconWallet, michelsonAddress: string) => {
