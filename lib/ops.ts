@@ -14,10 +14,15 @@ const m = {
   string: (s: string): MichelsonV1Expression => ({ string: s }),
   int: (n: number | string): MichelsonV1Expression => ({ int: String(n) }),
   pair: (...a: MichelsonV1Expression[]): MichelsonV1Expression => ({ prim: 'Pair', args: a }),
+  left: (x: MichelsonV1Expression): MichelsonV1Expression => ({ prim: 'Left', args: [x] }),
   right: (x: MichelsonV1Expression): MichelsonV1Expression => ({ prim: 'Right', args: [x] }),
   unit: { prim: 'Unit' } as MichelsonV1Expression,
   none: { prim: 'None' } as MichelsonV1Expression,
 };
+
+// FA2 `update_operators` param adding `operator` for `(owner, token_id)` (Add_operator is the first variant).
+const addOperatorValue = (owner: string, operator: string, tokenId: number): MichelsonV1Expression =>
+  [m.left(m.pair(m.string(owner), m.string(operator), m.int(tokenId)))] as unknown as MichelsonV1Expression;
 
 // objkt v4 `ask` parameter (XTZ currency, 1 edition, seller takes 100%).
 const askValue = (fa2: string, tokenId: number, priceMutez: number, seller: string): MichelsonV1Expression =>
@@ -35,31 +40,47 @@ const askValue = (fa2: string, tokenId: number, priceMutez: number, seller: stri
 
 // ---------------- SELLER: mint N tokens + list each as an ask ----------------
 export interface SellerItem {
-  tokenId: number;
   priceMutez: number;
 }
 
-// One ordered op list: [mint..., ask...]. All mints precede all asks, so chunked sends stay valid.
-export function buildMintListOps(seller: string, items: SellerItem[]): ParamsWithKind[] {
-  const mints: ParamsWithKind[] = items.map((it) => ({
+// One ordered op list: [mint..., update_operators..., ask...]. The FA2 assigns ids from its
+// next_token_id counter, so token ids are positional: the i-th mint gets `baseTokenId + i`
+// (baseTokenId = next_token_id read just before sending). All mints precede the operator/ask ops
+// so the tokens exist first and chunked sends stay valid. objkt pulls the NFT from the seller on
+// fulfill, hence the per-token update_operators approving the marketplace.
+// Note: ids are predicted from baseTokenId — if another account mints into the same FA2 between the
+// read and these ops landing, the predictions shift and the asks would reference the wrong tokens.
+// Fine for a single-user demo; the real guard is the on-chain counter (ids never collide).
+export function buildMintListOps(seller: string, items: SellerItem[], baseTokenId: number): ParamsWithKind[] {
+  const tid = (i: number) => baseTokenId + i;
+  const mints: ParamsWithKind[] = items.map(() => ({
     kind: OpKind.TRANSACTION,
     to: CFG.fa2,
     amount: 0,
-    parameter: { entrypoint: 'mint', value: m.pair(m.string(seller), m.int(it.tokenId)) },
+    parameter: { entrypoint: 'mint', value: m.string(seller) },
+    gasLimit: 200_000,
+    storageLimit: 500,
+    fee: 30_000,
+  }));
+  const operators: ParamsWithKind[] = items.map((_, i) => ({
+    kind: OpKind.TRANSACTION,
+    to: CFG.fa2,
+    amount: 0,
+    parameter: { entrypoint: 'update_operators', value: addOperatorValue(seller, CFG.objkt, tid(i)) },
     gasLimit: 200_000,
     storageLimit: 350,
     fee: 30_000,
   }));
-  const asks: ParamsWithKind[] = items.map((it) => ({
+  const asks: ParamsWithKind[] = items.map((it, i) => ({
     kind: OpKind.TRANSACTION,
     to: CFG.objkt,
     amount: 0,
-    parameter: { entrypoint: 'ask', value: askValue(CFG.fa2, it.tokenId, it.priceMutez, seller) },
+    parameter: { entrypoint: 'ask', value: askValue(CFG.fa2, tid(i), it.priceMutez, seller) },
     gasLimit: 400_000,
     storageLimit: 1_200,
     fee: 40_000,
   }));
-  return [...mints, ...asks];
+  return [...mints, ...operators, ...asks];
 }
 
 // ---------------- BUYER: pay an ERC20 for an XTZ-priced ask ----------------
@@ -235,10 +256,4 @@ export async function sendChunked(tezos: TezosToolkit, ops: ParamsWithKind[], on
     await op.confirmation();
   }
   return hashes;
-}
-
-// Fresh, collision-free token ids for a mint batch (timestamp-based).
-export function freshTokenIds(count: number): number[] {
-  const base = Date.now();
-  return Array.from({ length: count }, (_, i) => base + i);
 }

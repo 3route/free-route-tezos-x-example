@@ -1,6 +1,6 @@
 // Read-only chain queries (tzkt + EVM RPC). No keys, no signing.
 import { ethers } from 'ethers';
-import { CFG, FA2_LEDGER_BIGMAP } from './config';
+import { CFG } from './config';
 
 export interface Listing {
   askId: string;
@@ -52,8 +52,17 @@ export async function fetchXtzBalance(michelsonAddress: string): Promise<bigint>
 }
 
 export async function fetchOwner(tokenId: string): Promise<string | null> {
-  const k = (await fetch(`${CFG.tzktApi}/bigmaps/${FA2_LEDGER_BIGMAP}/keys?key=${tokenId}`).then((r) => r.json()).catch(() => [])) as Array<{ value?: string }>;
+  const k = (await fetch(`${CFG.tzktApi}/contracts/${CFG.fa2}/bigmaps/ledger/keys?key=${tokenId}`).then((r) => r.json()).catch(() => [])) as Array<{ value?: string }>;
   return k[0]?.value ?? null;
+}
+
+// The FA2's next_token_id counter — the id its next mint will assign. Used to predict ids for a
+// mint batch (the contract, not the client, is the source of truth, so ids never collide).
+// Throws on an unreadable counter: a silent 0 would make the seller list asks for the wrong tokens.
+export async function fetchNextTokenId(): Promise<number> {
+  const s = (await fetch(`${CFG.tzktApi}/contracts/${CFG.fa2}/storage`).then((r) => r.json())) as { next_token_id?: string };
+  if (s?.next_token_id == null) throw new Error('could not read FA2 next_token_id');
+  return Number(s.next_token_id);
 }
 
 export interface OwnedToken {
@@ -62,7 +71,7 @@ export interface OwnedToken {
 
 // Tokens from the test FA2 currently owned by a Michelson address (ledger bigmap: token_id -> owner).
 export async function fetchOwned(michelsonAddress: string): Promise<OwnedToken[]> {
-  const url = `${CFG.tzktApi}/bigmaps/${FA2_LEDGER_BIGMAP}/keys?value=${michelsonAddress}&active=true&limit=200&sort.desc=id`;
+  const url = `${CFG.tzktApi}/contracts/${CFG.fa2}/bigmaps/ledger/keys?value=${michelsonAddress}&active=true&limit=200&sort.desc=id`;
   const keys = (await fetch(url).then((r) => r.json()).catch(() => [])) as Array<{ key: string }>;
   return keys.map((k) => ({ tokenId: k.key }));
 }

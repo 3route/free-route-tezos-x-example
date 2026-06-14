@@ -2,7 +2,8 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useWallet } from '@/lib/wallet';
 import { useUi } from '@/lib/ui';
-import { buildMintListOps, freshTokenIds, sendChunked, type SellerItem } from '@/lib/ops';
+import { buildMintListOps, sendChunked, type SellerItem } from '@/lib/ops';
+import { fetchNextTokenId } from '@/lib/tzkt';
 import { nftName } from '@/lib/names';
 import { short } from '@/lib/format';
 import { NftArt } from './NftArt';
@@ -13,25 +14,39 @@ interface Row {
   priceXtz: number;
 }
 
-const DEFAULT_COUNT = 5;
+const DEFAULT_COUNT = 4;
 const DEFAULT_PRICE = 0.004;
+
+// Predicted rows for a mint batch: the FA2 counter assigns ids, so the i-th token gets `base + i`.
+const buildRows = (base: number, n: number): Row[] =>
+  Array.from({ length: n }, (_, i) => ({ tokenId: base + i, name: nftName(base + i), priceXtz: DEFAULT_PRICE }));
 
 export function SellerPanel() {
   const { connected, michelsonAddress, tezos } = useWallet();
   const refresh = useUi((s) => s.refresh);
   const [count, setCount] = useState(DEFAULT_COUNT);
+  const [baseId, setBaseId] = useState<number | null>(null); // FA2 counter, fetched once (not per keystroke)
   const [rows, setRows] = useState<Row[]>([]);
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState<{ ok: boolean; msg: string } | null>(null);
 
-  const regenerate = useCallback((n: number) => {
-    const ids = freshTokenIds(n);
-    setRows(ids.map((tokenId) => ({ tokenId, name: nftName(tokenId), priceXtz: DEFAULT_PRICE })));
+  // Read the FA2 counter and (re)build the preview rows. Called on mount, on Regenerate, and after a mint
+  // (the counter advances) — NOT on count changes, which rebuild locally from the cached base.
+  const reload = useCallback(async (n: number) => {
+    try {
+      const base = await fetchNextTokenId();
+      setBaseId(base);
+      setRows(buildRows(base, n));
+    } catch (e) {
+      setBaseId(null);
+      setRows([]);
+      setStatus({ ok: false, msg: `Could not read the FA2 token counter: ${(e as Error).message}` });
+    }
   }, []);
 
   useEffect(() => {
-    regenerate(DEFAULT_COUNT);
-  }, [regenerate]);
+    void reload(DEFAULT_COUNT);
+  }, [reload]);
 
   const setPrice = (tokenId: number, priceXtz: number) =>
     setRows((rs) => rs.map((r) => (r.tokenId === tokenId ? { ...r, priceXtz } : r)));
@@ -43,11 +58,13 @@ export function SellerPanel() {
     setBusy(true);
     setStatus(null);
     try {
-      const items: SellerItem[] = rows.map((r) => ({ tokenId: r.tokenId, priceMutez: Math.round(r.priceXtz * 1e6) }));
-      const ops = buildMintListOps(michelsonAddress, items);
+      // re-read the counter right before sending so the predicted ids are as fresh as possible
+      const base = await fetchNextTokenId();
+      const items: SellerItem[] = rows.map((r) => ({ priceMutez: Math.round(r.priceXtz * 1e6) }));
+      const ops = buildMintListOps(michelsonAddress, items, base);
       await sendChunked(tezos, ops);
       setStatus({ ok: true, msg: `Minted & listed ${rows.length} NFTs` });
-      regenerate(count);
+      await reload(count); // counter advanced — refresh the preview ids
       refresh();
     } catch (e) {
       setStatus({ ok: false, msg: (e as Error).message });
@@ -71,7 +88,7 @@ export function SellerPanel() {
               onChange={(e) => {
                 const n = Math.max(1, Math.min(20, Number(e.target.value) || 1));
                 setCount(n);
-                regenerate(n);
+                if (baseId !== null) setRows(buildRows(baseId, n)); // rebuild locally — no network per keystroke
               }}
             />
           </div>
@@ -86,7 +103,7 @@ export function SellerPanel() {
               onChange={(e) => setAllPrices(Number(e.target.value) || 0)}
             />
           </div>
-          <button className="btn-ghost" onClick={() => regenerate(count)} disabled={busy}>
+          <button className="btn-ghost" onClick={() => void reload(count)} disabled={busy}>
             ↻ Regenerate
           </button>
           <button className="btn-primary ml-auto" onClick={() => void mintAndList()} disabled={!connected || busy || rows.length === 0}>

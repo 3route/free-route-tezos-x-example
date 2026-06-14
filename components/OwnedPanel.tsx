@@ -43,7 +43,7 @@ export function OwnedPanel() {
               </span>
             </div>
             <a
-              href={`${CFG.explorer}/${CFG.fa2}/tokens`}
+              href={`${CFG.explorer}/${CFG.fa2}/tokens/${o.tokenId}/transfers`}
               target="_blank"
               rel="noreferrer"
               className="mt-3 text-xs text-accent hover:underline"
