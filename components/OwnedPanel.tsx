@@ -1,9 +1,10 @@
 'use client';
 import { useOwned } from '@/lib/hooks';
 import { useWallet } from '@/lib/wallet';
-import { nftHue, nftName } from '@/lib/names';
+import { nftName } from '@/lib/names';
 import { short } from '@/lib/format';
 import { CFG } from '@/lib/config';
+import { NftArt } from './NftArt';
 
 export function OwnedPanel() {
   const { connected, michelsonAddress } = useWallet();
@@ -33,10 +34,7 @@ export function OwnedPanel() {
       <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
         {owned.map((o) => (
           <div key={o.tokenId} className="card flex flex-col p-3">
-            <div
-              className="mb-3 h-28 rounded-xl"
-              style={{ background: `linear-gradient(135deg, hsl(${nftHue(o.tokenId)} 70% 55%), hsl(${(nftHue(o.tokenId) + 60) % 360} 70% 45%))` }}
-            />
+            <NftArt tokenId={o.tokenId} className="mb-3 h-28 w-full rounded-xl" />
             <div className="truncate text-sm font-medium">{nftName(o.tokenId)}</div>
             <div className="font-mono text-[11px] text-slate-500">#{short(o.tokenId, 6)}</div>
             <div className="mt-2">

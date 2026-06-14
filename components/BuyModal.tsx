@@ -7,12 +7,13 @@ import { useUi } from '@/lib/ui';
 import { useBalances, useTokens } from '@/lib/hooks';
 import { buildBuyBatch, sendWalletGroup, type BuyDetails } from '@/lib/ops';
 import { fmtUnits, mutezToXtz, short } from '@/lib/format';
-import { nftHue, nftName } from '@/lib/names';
+import { nftName } from '@/lib/names';
 import { useHistory } from '@/lib/history';
 import { CFG } from '@/lib/config';
 import { fetchErc20Balance, fetchXtzBalance, type Listing } from '@/lib/tzkt';
 import { buildBuyReceipt, type BuyReceipt } from '@/lib/receipt';
 import { ReceiptModal } from './ReceiptModal';
+import { NftArt } from './NftArt';
 
 const Spinner = () => <div className="h-6 w-6 animate-spin rounded-full border-2 border-edge border-t-accent" />;
 
@@ -141,10 +142,7 @@ export function BuyModal({ listing, onClose }: { listing: Listing; onClose: () =
       <div className="card max-h-[90vh] w-full max-w-lg overflow-y-auto" onClick={(e) => e.stopPropagation()}>
         {/* header */}
         <div className="mb-4 flex items-center gap-3">
-          <div
-            className="h-14 w-14 rounded-xl"
-            style={{ background: `linear-gradient(135deg, hsl(${nftHue(listing.tokenId)} 70% 55%), hsl(${(nftHue(listing.tokenId) + 60) % 360} 70% 45%))` }}
-          />
+          <NftArt tokenId={listing.tokenId} className="h-14 w-14 shrink-0 rounded-xl" />
           <div className="min-w-0">
             <div className="font-semibold">{nftName(listing.tokenId)}</div>
             <div className="font-mono text-[11px] text-slate-500">

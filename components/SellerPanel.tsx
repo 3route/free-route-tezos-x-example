@@ -3,13 +3,13 @@ import { useCallback, useEffect, useState } from 'react';
 import { useWallet } from '@/lib/wallet';
 import { useUi } from '@/lib/ui';
 import { buildMintListOps, freshTokenIds, sendChunked, type SellerItem } from '@/lib/ops';
-import { nftHue, nftName } from '@/lib/names';
+import { nftName } from '@/lib/names';
 import { short } from '@/lib/format';
+import { NftArt } from './NftArt';
 
 interface Row {
   tokenId: number;
   name: string;
-  hue: number;
   priceXtz: number;
 }
 
@@ -26,7 +26,7 @@ export function SellerPanel() {
 
   const regenerate = useCallback((n: number) => {
     const ids = freshTokenIds(n);
-    setRows(ids.map((tokenId) => ({ tokenId, name: nftName(tokenId), hue: nftHue(tokenId), priceXtz: DEFAULT_PRICE })));
+    setRows(ids.map((tokenId) => ({ tokenId, name: nftName(tokenId), priceXtz: DEFAULT_PRICE })));
   }, []);
 
   useEffect(() => {
@@ -108,10 +108,7 @@ export function SellerPanel() {
       <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
         {rows.map((r) => (
           <div key={r.tokenId} className="card p-3">
-            <div
-              className="mb-3 h-24 rounded-xl"
-              style={{ background: `linear-gradient(135deg, hsl(${r.hue} 70% 55%), hsl(${(r.hue + 60) % 360} 70% 45%))` }}
-            />
+            <NftArt tokenId={r.tokenId} className="mb-3 h-24 w-full rounded-xl" />
             <div className="truncate text-sm font-medium">{r.name}</div>
             <div className="mb-2 font-mono text-[11px] text-slate-500">#{short(String(r.tokenId), 5)}</div>
             <div className="label mb-1">Price (XTZ)</div>

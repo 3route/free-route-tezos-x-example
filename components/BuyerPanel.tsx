@@ -3,8 +3,9 @@ import { useEffect, useMemo, useState } from 'react';
 import { useListings, usePriceCurrency, useTokens } from '@/lib/hooks';
 import { useWallet } from '@/lib/wallet';
 import { fmtSig, mutezToXtz, short } from '@/lib/format';
-import { nftHue, nftName } from '@/lib/names';
+import { nftName } from '@/lib/names';
 import { BuyModal } from './BuyModal';
+import { NftArt } from './NftArt';
 import { Select, type SelectOption } from './Select';
 import type { Listing } from '@/lib/tzkt';
 
@@ -113,10 +114,7 @@ export function BuyerPanel() {
           const isOwn = connected && l.seller === michelsonAddress; // objkt blocks buying your own ask (M_NO_SELF_FULFILL)
           return (
             <div key={l.askId} className="card flex flex-col p-3">
-              <div
-                className="mb-3 h-28 rounded-xl"
-                style={{ background: `linear-gradient(135deg, hsl(${nftHue(l.tokenId)} 70% 55%), hsl(${(nftHue(l.tokenId) + 60) % 360} 70% 45%))` }}
-              />
+              <NftArt tokenId={l.tokenId} className="mb-3 h-28 w-full rounded-xl" />
               <div className="truncate text-sm font-medium">{nftName(l.tokenId)}</div>
               <div className="font-mono text-[11px] text-slate-500">
                 #{short(l.tokenId, 5)} · ask {l.askId}
