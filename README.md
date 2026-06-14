@@ -1,7 +1,7 @@
 # objkt EVM-pay — demo dApp
 
 Next.js SPA on top of the pure **[3route-tezosx SDK](https://github.com/maxima-net/evm-objkt)**, consumed as a
-git submodule at [`sdk-repo/`](sdk-repo) (source-imported via the `@sdk/*` path alias → `sdk-repo/sdk`). Pages
+git submodule at [`3route-tezosx/`](3route-tezosx) (source-imported via the `@sdk/*` path alias → `3route-tezosx/src`). Pages
 (header tabs, real routes):
 
 - **Buyer** (`/`) — browse active listings, see tz1 / EVM-alias balances, pick any ERC20 (USDC / uranium /
@@ -29,7 +29,7 @@ npm run dev          # http://localhost:3001
 Point `THREE_ROUTE_API` at a running 3route server (defaults to `http://127.0.0.1:3000`). Connect Temple
 configured for **Tezos X previewnet**. Need test XTZ? The Bridge page links to the faucet.
 
-To update the SDK to its latest commit: `git submodule update --remote sdk-repo` then commit the bump.
+To update the SDK to its latest commit: `git submodule update --remote 3route-tezosx` then commit the bump.
 
 ## Config
 
