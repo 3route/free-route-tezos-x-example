@@ -1,0 +1,59 @@
+'use client';
+import { useState } from 'react';
+import { useHistory, type HistoryEntry } from '@/lib/history';
+import { fmtTime, fmtUnits } from '@/lib/format';
+import { nftName } from '@/lib/names';
+import { ReceiptModal } from './ReceiptModal';
+import { SwapReceiptModal } from './SwapReceiptModal';
+
+export function LogPanel() {
+  const { entries, clear } = useHistory();
+  const [sel, setSel] = useState<HistoryEntry | null>(null);
+
+  return (
+    <>
+      <div className="card flex h-full flex-col">
+        <div className="mb-3 flex items-center justify-between">
+          <h3 className="text-sm font-semibold text-slate-300">Activity log</h3>
+          {entries.length > 0 && (
+            <button className="text-xs text-slate-500 hover:text-slate-300" onClick={clear}>
+              clear
+            </button>
+          )}
+        </div>
+
+        <div className="flex-1 space-y-1.5 overflow-auto pr-1">
+          {entries.length === 0 && <p className="font-mono text-xs text-slate-600">No buys or swaps yet.</p>}
+          {entries.map((e) => (
+            <button
+              key={e.id}
+              onClick={() => setSel(e)}
+              className="flex w-full items-start gap-2 rounded-lg px-2 py-1.5 text-left text-xs transition hover:bg-white/5"
+              title="view receipt"
+            >
+              <span className={`mt-1 h-2 w-2 shrink-0 rounded-full ${e.kind === 'buy' ? 'bg-accent' : 'bg-accent2'}`} />
+              <span className="min-w-0 flex-1">
+                {e.kind === 'buy' ? (
+                  <span className="text-slate-300">
+                    Bought <span className="font-medium">{nftName(e.tokenId)}</span>{' '}
+                    <span className="text-slate-500">· −{fmtUnits(e.receipt.usdcSpent, e.token.decimals, e.token.decimals)} {e.token.symbol}</span>
+                  </span>
+                ) : (
+                  <span className="text-slate-300">
+                    Swapped <span className="font-medium">{e.receipt.src.symbol} → {e.receipt.dst.symbol}</span>{' '}
+                    <span className="text-slate-500">· +{fmtUnits(e.receipt.dstReceived, e.receipt.dst.decimals, e.receipt.dst.decimals)} {e.receipt.dst.symbol}</span>
+                  </span>
+                )}
+                <span className="block font-mono text-[11px] text-slate-600">{fmtTime(e.ts)} · view receipt ↗</span>
+              </span>
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* modals live OUTSIDE the .card — its backdrop-blur creates a containing block that would trap fixed overlays */}
+      {sel?.kind === 'buy' && <ReceiptModal receipt={sel.receipt} token={sel.token} tokenId={sel.tokenId} onClose={() => setSel(null)} />}
+      {sel?.kind === 'swap' && <SwapReceiptModal receipt={sel.receipt} onClose={() => setSel(null)} />}
+    </>
+  );
+}
