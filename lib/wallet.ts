@@ -30,6 +30,7 @@ const makeWallet = (): BeaconWallet =>
 const bind = (wallet: BeaconWallet, michelsonAddress: string) => {
   const tezos = new TezosToolkit(CFG.tezRpc);
   tezos.setWalletProvider(wallet);
+  tezos.setProvider({ config: { confirmationPollingTimeoutSecond: 30 } });
   return { connected: true, michelsonAddress, aliasAddress: michelsonToAlias(michelsonAddress), tezos, wallet, connecting: false };
 };
 
