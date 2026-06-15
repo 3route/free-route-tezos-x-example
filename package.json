@@ -12,9 +12,11 @@
   },
   "dependencies": {
     "@airgap/beacon-dapp": "^4.5.1",
+    "@noble/hashes": "^1.8.0",
     "@taquito/beacon-wallet": "^21.0.5",
     "@taquito/rpc": "^21.0.5",
     "@taquito/taquito": "^21.0.5",
+    "@taquito/utils": "^21.0.5",
     "ethers": "^6.16.0",
     "next": "^14.2.15",
     "react": "^18.3.1",

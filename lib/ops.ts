@@ -4,7 +4,7 @@ import { OpKind } from '@taquito/taquito';
 import type { ParamsWithKind, TezosToolkit } from '@taquito/taquito';
 import type { MichelsonV1Expression } from '@taquito/rpc';
 import { CFG } from './config';
-import { XTZ, buildBatchTransaction, buildSwapOperation, fromEvm, isXtz, michelsonToAlias, objkt, resolveApproval, targetForMinOut, threeRoute, toEvm } from './sdk';
+import { XTZ, buildBatchTransaction, buildSwapOperation, fromEvm, isXtz, michelsonToEvmAlias, objkt, resolveApproval, targetForMinOut, threeRoute, toEvm } from './sdk';
 import type { ApprovalMode, ThreeRouteToken } from './sdk';
 import { fmtUnits } from './format';
 
@@ -107,7 +107,7 @@ export async function buildBuyBatch(
   // Size the exact-out target so the on-chain floor (minOut = target × (1 − slip)) covers the NFT price.
   const bps = Math.min(slippageBps, 9900);
   const target = targetForMinOut(BigInt(ask.priceMutez), bps);
-  const alias = michelsonToAlias(buyerMichelsonAddress);
+  const alias = michelsonToEvmAlias(buyerMichelsonAddress);
 
   // 1. quote exact-out payToken -> XTZ. 2. read the on-chain allowance -> pick the minimal approval mode.
   const swap = await threeRoute.getSwap({
@@ -181,7 +181,7 @@ export async function buildSwapBatch(
   amount: bigint,
   slippageBps: number,
 ): Promise<{ ops: ParamsWithKind[]; details: SwapDetails }> {
-  const alias = michelsonToAlias(account);
+  const alias = michelsonToEvmAlias(account);
   const swap = await threeRoute.getSwap({
     src: src.address,
     dst: dst.address,

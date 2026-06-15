@@ -4,7 +4,7 @@ import { TezosToolkit } from '@taquito/taquito';
 import { BeaconWallet } from '@taquito/beacon-wallet';
 import { BeaconEvent, ColorMode } from '@airgap/beacon-dapp';
 import { CFG, NETWORK_NAME } from './config';
-import { michelsonToAlias } from './sdk';
+import { michelsonToEvmAlias } from './sdk';
 
 interface WalletState {
   connected: boolean;
@@ -31,7 +31,7 @@ const bind = (wallet: BeaconWallet, michelsonAddress: string) => {
   const tezos = new TezosToolkit(CFG.tezRpc);
   tezos.setWalletProvider(wallet);
   tezos.setProvider({ config: { confirmationPollingTimeoutSecond: 30 } });
-  return { connected: true, michelsonAddress, aliasAddress: michelsonToAlias(michelsonAddress), tezos, wallet, connecting: false };
+  return { connected: true, michelsonAddress, aliasAddress: michelsonToEvmAlias(michelsonAddress), tezos, wallet, connecting: false };
 };
 
 export const useWallet = create<WalletState>((set, get) => {

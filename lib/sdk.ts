@@ -7,7 +7,7 @@ export {
   toEvm,
   fromEvm,
   targetForMinOut,
-  michelsonToAlias,
+  michelsonToEvmAlias,
   objkt,
   buildSwapOperation,
   buildBatchTransaction,
