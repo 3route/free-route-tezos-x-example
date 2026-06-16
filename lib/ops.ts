@@ -124,7 +124,7 @@ export async function buildBuyBatch(
 
   // 3. swap ops for that mode + the marketplace fulfill (paid by the bridged XTZ) — one atomic group.
   const swapOps = buildSwapOperation(swap, { gateway: CFG.gateway, srcAddress: payToken.address, approval });
-  const fulfillOp = objkt.buildFulfillAsk({ marketplace: CFG.objkt, askId: ask.askId, amountMutez: BigInt(ask.priceMutez) });
+  const fulfillOp = objkt.buildFulfillAsk({ marketplace: CFG.objkt, askId: ask.askId, editions: 1, amountMutez: ask.priceMutez });
   const ops = buildBatchTransaction(swapOps, fulfillOp);
 
   const expectedOutMutez = Number(fromEvm(swap.dstAmount, XTZ.address));
