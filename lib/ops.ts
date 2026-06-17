@@ -123,7 +123,7 @@ export async function buildBuyBatch(
   const approval = await resolveApproval({ evmRpc: CFG.evmRpc, token: payToken.address, owner: alias, spender: swap.tx.to, amount: srcAmount });
 
   // 3. swap ops for that mode + the marketplace fulfill (paid by the bridged XTZ) — one atomic group.
-  const swapOps = buildSwapOperation(swap, { gateway: CFG.gateway, srcAddress: payToken.address, approval });
+  const swapOps = buildSwapOperation({ swap, gateway: CFG.gateway, srcAddress: payToken.address, approval });
   const fulfillOp = objkt.buildFulfillAsk({ marketplace: CFG.objkt, askId: ask.askId, editions: 1, amountMutez: ask.priceMutez });
   const ops = buildBatchTransaction(swapOps, fulfillOp);
 
@@ -194,7 +194,7 @@ export async function buildSwapBatch(
   const approval: ApprovalMode = isXtz(src.address)
     ? 'none' // native XTZ input carries value as msg.value — no approve
     : await resolveApproval({ evmRpc: CFG.evmRpc, token: src.address, owner: alias, spender: swap.tx.to, amount: swap.srcAmount });
-  const ops = buildSwapOperation(swap, { gateway: CFG.gateway, srcAddress: src.address, approval });
+  const ops = buildSwapOperation({ swap, gateway: CFG.gateway, srcAddress: src.address, approval });
   const payAmount = fromEvm(swap.srcAmount, src.address);
 
   // steps mirror the ACTUAL ops (1 / 2 / 3, depending on the approval mode).
