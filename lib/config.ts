@@ -5,7 +5,7 @@ export const CFG = {
   tzktApi: process.env.NEXT_PUBLIC_TZKT_API ?? 'https://api.previewnet.tezosx.tzkt.io/v1',
   chainId: Number(process.env.NEXT_PUBLIC_CHAIN_ID ?? 128064),
   gateway: process.env.NEXT_PUBLIC_GATEWAY ?? 'KT18oDJJKXMKhfE1bSuAPGp92pYcwVDiqsPw',
-  objkt: process.env.NEXT_PUBLIC_OBJKT ?? 'KT1AyJ5P4qRJZuHqXiR9QkKRuCy49yNyLVzo',
+  objkt: process.env.NEXT_PUBLIC_OBJKT ?? 'KT1KtgocFYMMZ5ZrnTjdbTq6BG6YvgUyGQrG',
   fa2: process.env.NEXT_PUBLIC_FA2 ?? 'KT1TGSPo2Z8MJtCpNe2VmuuMaUJd8cbWLeLp',
   // ERC20 metadata standard; XTZ shown with 6 dec (mutez). 3route reports decimals per token too.
   explorer: 'https://previewnet.tezosx.tzkt.io', // tzkt — Michelson side (tz/KT addresses)
