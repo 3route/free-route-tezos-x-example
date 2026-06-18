@@ -118,7 +118,7 @@ export function usePriceCurrency(payTokens: ThreeRouteToken[]) {
     const fetchRate = async () => {
       try {
         // a rate quote needs no address — from/receiver are optional on getQuote.
-        const q = await threeRoute.getQuote({ src: token.address, dst: XTZ_ADDRESS, amount: REF_XTZ_WEI, exactOut: true, slippagePercent: 1 });
+        const q = await threeRoute.getQuote({ src: token.address, dst: XTZ_ADDRESS, amount: REF_XTZ_WEI, isExactOut: true });
         if (!cancelled) {
           setRate(q.srcAmount);
           setUpdatedAt(Date.now());

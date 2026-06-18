@@ -55,7 +55,7 @@ export function BridgePanel() {
     const run = async () => {
       setPreviewing(true);
       try {
-        const q = await threeRoute.getQuote({ src: fromTok.address, dst: toTok.address, amount: toEvm(amountBase, fromTok.address), exactOut: false, slippagePercent: slippageBps / 100 });
+        const q = await threeRoute.getQuote({ src: fromTok.address, dst: toTok.address, amount: toEvm(amountBase, fromTok.address) });
         if (!cancelled) {
           setOutPreview(fromEvm(q.dstAmount, toTok.address));
           setPreviewAt(Date.now());

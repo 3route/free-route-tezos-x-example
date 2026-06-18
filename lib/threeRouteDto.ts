@@ -2,10 +2,10 @@
 // parse{Quote,Swap}Query validate UNTRUSTED params (server) — parseSwapQuery additionally requires `from`.
 import type { EvmAddress, QuoteQuery, SwapQuery } from '@sdk/index.js';
 
-export function queryToParams(q: QuoteQuery & Partial<Pick<SwapQuery, 'from' | 'receiver'>>): URLSearchParams {
+export function queryToParams(q: QuoteQuery & Partial<Pick<SwapQuery, 'from' | 'receiver' | 'slippagePercent'>>): URLSearchParams {
   const p = new URLSearchParams({ src: q.src, dst: q.dst, amount: q.amount.toString() });
-  if (q.exactOut !== undefined) p.set('exactOut', String(q.exactOut));
-  if (q.slippagePercent !== undefined) p.set('slippagePercent', String(q.slippagePercent));
+  if (q.isExactOut !== undefined) p.set('isExactOut', String(q.isExactOut));
+  if (q.slippagePercent !== undefined) p.set('slippagePercent', String(q.slippagePercent)); // swap-only
   if (q.from) p.set('from', q.from);
   if (q.receiver) p.set('receiver', q.receiver);
   return p;
@@ -23,16 +23,10 @@ export function parseQuoteQuery(params: URLSearchParams): QuoteQuery {
 
   const q: QuoteQuery = { src, dst, amount: BigInt(amount) };
 
-  const exactOut = params.get('exactOut');
-  if (exactOut !== null) {
-    if (exactOut !== 'true' && exactOut !== 'false') throw new Error('`exactOut` must be "true" or "false"');
-    q.exactOut = exactOut === 'true';
-  }
-  const slippage = params.get('slippagePercent');
-  if (slippage !== null) {
-    const n = Number(slippage);
-    if (!Number.isFinite(n) || n < 0 || n > 100) throw new Error('`slippagePercent` must be a number in 0..100');
-    q.slippagePercent = n;
+  const isExactOut = params.get('isExactOut');
+  if (isExactOut !== null) {
+    if (isExactOut !== 'true' && isExactOut !== 'false') throw new Error('`isExactOut` must be "true" or "false"');
+    q.isExactOut = isExactOut === 'true';
   }
 
   return q;
@@ -49,6 +43,13 @@ export function parseSwapQuery(params: URLSearchParams): SwapQuery {
   if (receiver !== null) {
     if (!isAddress(receiver)) throw new Error('`receiver` must be a 0x address');
     swap.receiver = receiver;
+  }
+
+  const slippage = params.get('slippagePercent'); // swap-only — shapes dstAmountMin
+  if (slippage !== null) {
+    const n = Number(slippage);
+    if (!Number.isFinite(n) || n < 0 || n > 100) throw new Error('`slippagePercent` must be a number in 0..100');
+    swap.slippagePercent = n;
   }
 
   return swap;
