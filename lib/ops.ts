@@ -105,8 +105,8 @@ export async function buildBuyBatch(
   slippageBps: number,
 ): Promise<{ ops: ParamsWithKind[]; details: BuyDetails }> {
   // Size the exact-out target so the on-chain floor (minOut = target × (1 − slip)) covers the NFT price.
-  const bps = Math.min(slippageBps, 9900);
-  const target = targetForMinOut(BigInt(ask.priceMutez), bps);
+  // The SDK (targetForMinOut / getSwap) enforces the 0..5000 bps contract, so no local clamp here.
+  const target = targetForMinOut(BigInt(ask.priceMutez), slippageBps);
   const alias = michelsonToEvmAlias(buyerMichelsonAddress);
 
   // 1. quote exact-out payToken -> XTZ. 2. read the on-chain allowance -> pick the minimal approval mode.
@@ -117,7 +117,7 @@ export async function buildBuyBatch(
     isExactOut: true,
     from: alias,
     receiver: alias,
-    slippagePercent: bps / 100,
+    slippageBps,
   });
   const srcAmount = swap.srcAmount;
   const approval = await resolveApproval({ evmRpc: CFG.evmRpc, token: payToken.address, owner: alias, spender: swap.tx.to, amount: srcAmount });
@@ -149,7 +149,7 @@ export async function buildBuyBatch(
     expectedOutMutez,
     minOutMutez,
     changeMutez,
-    slippageBps: bps,
+    slippageBps,
     router: swap.tx.to,
     steps: [
       ...approveSteps,
@@ -189,7 +189,7 @@ export async function buildSwapBatch(
     isExactOut: false,
     from: alias,
     receiver: alias,
-    slippagePercent: slippageBps / 100,
+    slippageBps,
   });
   const approval: ApprovalMode = isXtz(src.address)
     ? 'none' // native XTZ input carries value as msg.value — no approve

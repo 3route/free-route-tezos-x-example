@@ -1,11 +1,13 @@
 // Query <-> URLSearchParams at the dApp's own /api/free-route/* boundary. queryToParams serializes (browser);
-// parse{Quote,Swap}Query validate UNTRUSTED params (server) — parseSwapQuery additionally requires `from`.
+// parse{Quote,Swap}Query validate UNTRUSTED structural params (addresses/amount/flags) on the server side —
+// parseSwapQuery additionally requires `from`. Slippage is intentionally NOT range-checked here: the SDK
+// (getSwap) owns that contract and throws on bad input, so we only parse it.
 import type { EvmAddress, QuoteQuery, SwapQuery } from '@sdk/index.js';
 
-export function queryToParams(q: QuoteQuery & Partial<Pick<SwapQuery, 'from' | 'receiver' | 'slippagePercent'>>): URLSearchParams {
+export function queryToParams(q: QuoteQuery & Partial<Pick<SwapQuery, 'from' | 'receiver' | 'slippageBps'>>): URLSearchParams {
   const p = new URLSearchParams({ src: q.src, dst: q.dst, amount: q.amount.toString() });
   if (q.isExactOut !== undefined) p.set('isExactOut', String(q.isExactOut));
-  if (q.slippagePercent !== undefined) p.set('slippagePercent', String(q.slippagePercent)); // swap-only
+  if (q.slippageBps !== undefined) p.set('slippageBps', String(q.slippageBps)); // swap-only
   if (q.from) p.set('from', q.from);
   if (q.receiver) p.set('receiver', q.receiver);
   return p;
@@ -45,12 +47,10 @@ export function parseSwapQuery(params: URLSearchParams): SwapQuery {
     swap.receiver = receiver;
   }
 
-  const slippage = params.get('slippagePercent'); // swap-only — shapes dstAmountMin
-  if (slippage !== null) {
-    const n = Number(slippage);
-    if (!Number.isFinite(n) || n < 0 || n > 100) throw new Error('`slippagePercent` must be a number in 0..100');
-    swap.slippagePercent = n;
-  }
+  // swap-only — shapes dstAmountMin (basis points). Only parse; the SDK enforces the range/integer contract.
+  // `if (slippage)` skips both absent and empty ("") — an empty param would coerce to 0 (a real 0% pick is "0").
+  const slippage = params.get('slippageBps');
+  if (slippage) swap.slippageBps = Number(slippage);
 
   return swap;
 }
