@@ -1,7 +1,7 @@
 # objkt EVM-pay — demo dApp
 
-Next.js SPA on top of the pure **[free-route-tezosx SDK](https://github.com/maxima-net/evm-objkt)**, consumed as a
-git submodule at [`free-route-tezosx/`](free-route-tezosx) (source-imported via the `@sdk/*` path alias → `free-route-tezosx/src`). Pages
+Next.js SPA on top of the pure **[free-route-tezos-x SDK](https://github.com/maxima-net/evm-objkt)**, consumed as a
+git submodule at [`free-route-tezos-x/`](free-route-tezos-x) (source-imported via the `@sdk/*` path alias → `free-route-tezos-x/src`). Pages
 (header tabs, real routes):
 
 - **Buyer** (`/`) — browse active listings, see tz1 / EVM-alias balances, pick any ERC20 (USDC / uranium /
@@ -29,7 +29,7 @@ npm run dev          # http://localhost:3001
 Point `FREE_ROUTE_API` at a running free-route server (defaults to `http://127.0.0.1:3000`). Connect Temple
 configured for **Tezos X previewnet**. Need test XTZ? The Bridge page links to the faucet.
 
-To update the SDK to its latest commit: `git submodule update --remote free-route-tezosx` then commit the bump.
+To update the SDK to its latest commit: `git submodule update --remote free-route-tezos-x` then commit the bump.
 
 ## Config
 

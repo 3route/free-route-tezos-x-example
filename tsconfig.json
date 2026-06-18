@@ -17,9 +17,9 @@
     "plugins": [{ "name": "next" }],
     "paths": {
       "@/*": ["./*"],
-      "@sdk/*": ["./free-route-tezosx/src/*"]
+      "@sdk/*": ["./free-route-tezos-x/src/*"]
     }
   },
   "include": ["next-env.d.ts", "**/*.ts", "**/*.tsx", ".next/types/**/*.ts"],
-  "exclude": ["node_modules", "free-route-tezosx"]
+  "exclude": ["node_modules", "free-route-tezos-x"]
 }
