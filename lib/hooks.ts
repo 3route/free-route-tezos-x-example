@@ -1,18 +1,18 @@
 'use client';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { create } from 'zustand';
-import { XTZ_ADDRESS, isXtz, threeRoute, xtzMutezToWei } from './sdk';
-import type { ThreeRouteToken } from './sdk';
+import { XTZ_ADDRESS, isXtz, freeRoute, xtzMutezToWei } from './sdk';
+import type { FreeRouteToken } from './sdk';
 import { fetchErc20Balance, fetchListings, fetchOwned, fetchXtzBalance, type Listing, type OwnedToken } from './tzkt';
 import { useUi } from './ui';
 import { fmtSig } from './format';
 
-// 3route token registry (payment options live here).
+// free-route token registry (payment options live here).
 export function useTokens() {
-  const [tokens, setTokens] = useState<ThreeRouteToken[]>([]);
+  const [tokens, setTokens] = useState<FreeRouteToken[]>([]);
   const [error, setError] = useState<string | null>(null);
   useEffect(() => {
-    threeRoute
+    freeRoute
       .getTokens()
       // stable, deterministic order — the server returns tokens in an arbitrary (map) order that
       // varies per fetch, and each useTokens() instance fetches independently. Sort by symbol so the
@@ -49,7 +49,7 @@ export const BALANCES_REFRESH_MS = 30_000; // same cadence as the rate quote and
 
 // Mount ONCE (top-level) with the connected addresses + pay tokens. Fetches now, on every global bump (refresh),
 // and every 30s; writes into the shared store. No-op until both addresses and the token list are available.
-export function useBalancesSync(aliasAddress: string | null, michelsonAddress: string | null, payTokens: ThreeRouteToken[]) {
+export function useBalancesSync(aliasAddress: string | null, michelsonAddress: string | null, payTokens: FreeRouteToken[]) {
   const apply = useBalancesStore((s) => s.apply);
   const bump = useUi((s) => s.bump);
   useEffect(() => {
@@ -90,12 +90,12 @@ export function useBalances() {
   return { xtz, erc, loading, updatedAt, refresh };
 }
 
-// Live price-currency converter. Pulls ONE exact-out rate (token per 1 XTZ) from the 3route /swap
+// Live price-currency converter. Pulls ONE exact-out rate (token per 1 XTZ) from the free-route /swap
 // endpoint and applies it to every listing; auto-refreshes every 30s. currency 'XTZ' = no conversion.
 const REF_XTZ_MUTEZ = 1_000_000n; // 1 XTZ
 const REF_XTZ_WEI = xtzMutezToWei(REF_XTZ_MUTEZ); // 1 XTZ in wei (EVM side)
 
-export function usePriceCurrency(payTokens: ThreeRouteToken[]) {
+export function usePriceCurrency(payTokens: FreeRouteToken[]) {
   const currency = useUi((s) => s.currency); // global — shared with the buy modal
   const setCurrency = useUi((s) => s.setCurrency);
   const [rate, setRate] = useState<bigint | null>(null); // token base units per 1 XTZ
@@ -118,7 +118,7 @@ export function usePriceCurrency(payTokens: ThreeRouteToken[]) {
     const fetchRate = async () => {
       try {
         // a rate quote needs no address — from/receiver are optional on getQuote.
-        const q = await threeRoute.getQuote({ src: token.address, dst: XTZ_ADDRESS, amount: REF_XTZ_WEI, isExactOut: true });
+        const q = await freeRoute.getQuote({ src: token.address, dst: XTZ_ADDRESS, amount: REF_XTZ_WEI, isExactOut: true });
         if (!cancelled) {
           setRate(q.srcAmount);
           setUpdatedAt(Date.now());

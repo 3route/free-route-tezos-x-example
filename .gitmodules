@@ -1,3 +1,3 @@
 [submodule "sdk-repo"]
-	path = 3route-tezosx
+	path = free-route-tezosx
 	url = https://github.com/maxima-net/evm-objkt.git

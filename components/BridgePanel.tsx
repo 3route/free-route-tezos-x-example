@@ -3,8 +3,8 @@ import { useEffect, useMemo, useState } from 'react';
 import { useBalances, useTokens } from '@/lib/hooks';
 import { useWallet } from '@/lib/wallet';
 import { useUi } from '@/lib/ui';
-import { XTZ, XTZ_ADDRESS, fromEvm, isXtz, threeRoute, toEvm } from '@/lib/sdk';
-import type { ThreeRouteToken } from '@/lib/sdk';
+import { XTZ, XTZ_ADDRESS, fromEvm, isXtz, freeRoute, toEvm } from '@/lib/sdk';
+import type { FreeRouteToken } from '@/lib/sdk';
 import { fmtUnits, parseUnits } from '@/lib/format';
 import { CFG } from '@/lib/config';
 import { BridgeModal } from './BridgeModal';
@@ -17,7 +17,7 @@ export function BridgePanel() {
   const { payTokens } = useTokens();
   const { xtz, erc } = useBalances();
 
-  const tokens = useMemo<ThreeRouteToken[]>(() => [XTZ, ...payTokens], [payTokens]);
+  const tokens = useMemo<FreeRouteToken[]>(() => [XTZ, ...payTokens], [payTokens]);
   const [fromAddr, setFromAddr] = useState(XTZ_ADDRESS);
   const [toAddr, setToAddr] = useState('');
   const [amountStr, setAmountStr] = useState('');
@@ -37,7 +37,7 @@ export function BridgePanel() {
   const byAddr = (a: string) => tokens.find((t) => t.address === a) ?? null;
   const fromTok = byAddr(fromAddr);
   const toTok = byAddr(toAddr);
-  const balanceOf = (t: ThreeRouteToken): bigint => (isXtz(t.address) ? xtz ?? 0n : erc[t.address] ?? 0n);
+  const balanceOf = (t: FreeRouteToken): bigint => (isXtz(t.address) ? xtz ?? 0n : erc[t.address] ?? 0n);
   const amountBase = fromTok ? parseUnits(amountStr, fromTok.decimals) : null;
   const insufficient = amountBase !== null && fromTok ? amountBase > balanceOf(fromTok) : false;
   const samePair = fromAddr === toAddr;
@@ -55,7 +55,7 @@ export function BridgePanel() {
     const run = async () => {
       setPreviewing(true);
       try {
-        const q = await threeRoute.getQuote({ src: fromTok.address, dst: toTok.address, amount: toEvm(amountBase, fromTok.address) });
+        const q = await freeRoute.getQuote({ src: fromTok.address, dst: toTok.address, amount: toEvm(amountBase, fromTok.address) });
         if (!cancelled) {
           setOutPreview(fromEvm(q.dstAmount, toTok.address));
           setPreviewAt(Date.now());
@@ -168,7 +168,7 @@ export function BridgePanel() {
         </div>
 
         {(previewing || refreshInSec !== null) && (
-          <p className="text-[11px] text-slate-500">quote via 3route{previewing ? ' · updating…' : ` · updating in ${refreshInSec}s`}</p>
+          <p className="text-[11px] text-slate-500">quote via free-route{previewing ? ' · updating…' : ` · updating in ${refreshInSec}s`}</p>
         )}
 
         {insufficient && <div className="text-xs text-amber-400">Insufficient {fromTok?.symbol} balance.</div>}

@@ -4,8 +4,8 @@ import { OpKind } from '@taquito/taquito';
 import type { ParamsWithKind, TezosToolkit } from '@taquito/taquito';
 import type { MichelsonV1Expression } from '@taquito/rpc';
 import { CFG } from './config';
-import { XTZ, buildBatchTransaction, buildSwapOperation, fromEvm, isXtz, michelsonToEvmAlias, objkt, resolveApproval, targetForMinOut, threeRoute, toEvm } from './sdk';
-import type { ApprovalMode, ThreeRouteToken } from './sdk';
+import { XTZ, buildBatchTransaction, buildSwapOperation, fromEvm, isXtz, michelsonToEvmAlias, objkt, resolveApproval, targetForMinOut, freeRoute, toEvm } from './sdk';
+import type { ApprovalMode, FreeRouteToken } from './sdk';
 import { fmtUnits } from './format';
 
 const MAX_GAS_PER_BATCH = 2_500_000; // stay safely under the per-op-group ceiling; split if exceeded
@@ -88,7 +88,7 @@ export interface BuyDetails {
   askId: string;
   tokenId: string;
   priceMutez: number;
-  payToken: ThreeRouteToken;
+  payToken: FreeRouteToken;
   payAmount: string; // swap.src.amount, base units of payToken — STRICT (calldata is exact-input)
   expectedOutMutez: number; // swap.dst.expected (mutez) — expected XTZ out
   minOutMutez: number; // swap.dst.min (mutez) — guaranteed XTZ floor (== price after our sizing)
@@ -101,7 +101,7 @@ export interface BuyDetails {
 export async function buildBuyBatch(
   buyerMichelsonAddress: string,
   ask: { askId: string; tokenId: string; priceMutez: number },
-  payToken: ThreeRouteToken,
+  payToken: FreeRouteToken,
   slippageBps: number,
 ): Promise<{ ops: ParamsWithKind[]; details: BuyDetails }> {
   // Size the exact-out target so the on-chain floor (minOut = target × (1 − slip)) covers the NFT price.
@@ -110,7 +110,7 @@ export async function buildBuyBatch(
   const alias = michelsonToEvmAlias(buyerMichelsonAddress);
 
   // 1. quote exact-out payToken -> XTZ. 2. read the on-chain allowance -> pick the minimal approval mode.
-  const swap = await threeRoute.getSwap({
+  const swap = await freeRoute.getSwap({
     src: payToken.address,
     dst: XTZ.address,
     amount: toEvm(target, XTZ.address),
@@ -132,7 +132,7 @@ export async function buildBuyBatch(
   const changeMutez = Math.max(0, expectedOutMutez - ask.priceMutez);
 
   // steps mirror the ACTUAL ops (2 / 3 / 4 in the group, depending on the approval mode).
-  const approveExact = { kind: 'approve (call_evm)', detail: `approve exactly ${fmtUnits(srcAmount, payToken.decimals, payToken.decimals)} ${payToken.symbol} to the 3route router` };
+  const approveExact = { kind: 'approve (call_evm)', detail: `approve exactly ${fmtUnits(srcAmount, payToken.decimals, payToken.decimals)} ${payToken.symbol} to the free-route router` };
   const approveSteps =
     approval === 'resetThenApprove'
       ? [{ kind: 'approve (call_evm)', detail: `reset ${payToken.symbol} allowance to 0 (safe re-approval)` }, approveExact]
@@ -162,8 +162,8 @@ export async function buildBuyBatch(
 
 // ---------------- BRIDGE: swap any token -> any token (XTZ <-> ERC20, ERC20 <-> ERC20) ----------------
 export interface SwapDetails {
-  src: ThreeRouteToken;
-  dst: ThreeRouteToken;
+  src: FreeRouteToken;
+  dst: FreeRouteToken;
   payAmount: bigint; // src consumer units actually spent (== input, since exact-input)
   expectedOut: bigint; // dst consumer units expected
   minOut: bigint; // dst consumer units guaranteed (floor)
@@ -176,13 +176,13 @@ export interface SwapDetails {
 // exact-input swap signed by the connected wallet. `amount` is src consumer units (mutez for XTZ, base for ERC20).
 export async function buildSwapBatch(
   account: string,
-  src: ThreeRouteToken,
-  dst: ThreeRouteToken,
+  src: FreeRouteToken,
+  dst: FreeRouteToken,
   amount: bigint,
   slippageBps: number,
 ): Promise<{ ops: ParamsWithKind[]; details: SwapDetails }> {
   const alias = michelsonToEvmAlias(account);
-  const swap = await threeRoute.getSwap({
+  const swap = await freeRoute.getSwap({
     src: src.address,
     dst: dst.address,
     amount: toEvm(amount, src.address),
@@ -198,7 +198,7 @@ export async function buildSwapBatch(
   const payAmount = fromEvm(swap.srcAmount, src.address);
 
   // steps mirror the ACTUAL ops (1 / 2 / 3, depending on the approval mode).
-  const approveExact = { kind: 'approve (call_evm)', detail: `approve exactly ${fmtUnits(payAmount, src.decimals, src.decimals)} ${src.symbol} to the 3route router` };
+  const approveExact = { kind: 'approve (call_evm)', detail: `approve exactly ${fmtUnits(payAmount, src.decimals, src.decimals)} ${src.symbol} to the free-route router` };
   const approveSteps =
     approval === 'resetThenApprove'
       ? [{ kind: 'approve (call_evm)', detail: `reset ${src.symbol} allowance to 0 (safe re-approval)` }, approveExact]

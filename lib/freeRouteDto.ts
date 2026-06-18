@@ -1,4 +1,4 @@
-// Query <-> URLSearchParams at the dApp's own /api/3route/* boundary. queryToParams serializes (browser);
+// Query <-> URLSearchParams at the dApp's own /api/free-route/* boundary. queryToParams serializes (browser);
 // parse{Quote,Swap}Query validate UNTRUSTED params (server) — parseSwapQuery additionally requires `from`.
 import type { EvmAddress, QuoteQuery, SwapQuery } from '@sdk/index.js';
 

@@ -94,7 +94,7 @@ export function BuyerPanel() {
               <span className="text-rose-400">rate unavailable</span>
             ) : (
               <>
-                {rateLabel ? <span className="text-slate-400">{rateLabel}</span> : 'quoting…'} · via 3route
+                {rateLabel ? <span className="text-slate-400">{rateLabel}</span> : 'quoting…'} · via free-route
                 {inSec !== null ? ` · updating in ${inSec}s` : ''}
               </>
             )}

@@ -54,7 +54,7 @@ export function BuyModal({ listing, onClose }: { listing: Listing; onClose: () =
 
   const priceMutez = Number(listing.priceMutez);
 
-  // (re)quote on token/slippage change, and auto-refresh every 30s (re-hits the 3route SDK)
+  // (re)quote on token/slippage change, and auto-refresh every 30s (re-hits the free-route SDK)
   useEffect(() => {
     if (!tezos || !michelsonAddress || !token) return;
     let cancelled = false;
@@ -215,7 +215,7 @@ export function BuyModal({ listing, onClose }: { listing: Listing; onClose: () =
           {slippageBps > 500 && <p className="mt-1.5 text-[11px] text-amber-400">High slippage — you may overpay.</p>}
           {slippageBps < 10 && <p className="mt-1.5 text-[11px] text-amber-400">Very low — the swap may revert on a thin pool.</p>}
           <p className="mt-1.5 text-[11px] text-slate-500">
-            quote via 3route{refreshInSec !== null ? ` · updating in ${refreshInSec}s` : ''}
+            quote via free-route{refreshInSec !== null ? ` · updating in ${refreshInSec}s` : ''}
           </p>
         </div>
 

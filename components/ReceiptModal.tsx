@@ -2,7 +2,7 @@
 import { fmtUnits, mutezToXtz } from '@/lib/format';
 import { nftName } from '@/lib/names';
 import { CFG } from '@/lib/config';
-import type { ThreeRouteToken } from '@/lib/sdk';
+import type { FreeRouteToken } from '@/lib/sdk';
 import type { BuyReceipt } from '@/lib/receipt';
 
 // signed XTZ display (µtz bigint -> "±N.NNN XTZ")
@@ -30,7 +30,7 @@ function Check({ ok, children }: { ok: boolean; children: React.ReactNode }) {
   );
 }
 
-export function ReceiptModal({ receipt: r, token, tokenId, onClose }: { receipt: BuyReceipt; token: ThreeRouteToken; tokenId: string; onClose: () => void }) {
+export function ReceiptModal({ receipt: r, token, tokenId, onClose }: { receipt: BuyReceipt; token: FreeRouteToken; tokenId: string; onClose: () => void }) {
   const sym = token.symbol;
   return (
     <div className="fixed inset-0 z-30 grid place-items-center bg-black/60 p-4" onClick={onClose}>

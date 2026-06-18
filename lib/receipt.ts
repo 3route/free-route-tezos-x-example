@@ -8,7 +8,7 @@
 //   - nftOwned            — FA2 ledger now shows the buyer as the token owner (real on-chain check).
 import { CFG } from './config';
 import { isXtz } from './sdk';
-import type { ThreeRouteToken } from './sdk';
+import type { FreeRouteToken } from './sdk';
 import { fetchErc20Balance, fetchOwner, fetchXtzBalance } from './tzkt';
 
 export interface BuyReceipt {
@@ -109,8 +109,8 @@ export async function buildBuyReceipt(params: {
 // adding the measured fee back on whichever side is native XTZ.
 export interface SwapReceipt {
   opHash: string;
-  src: ThreeRouteToken;
-  dst: ThreeRouteToken;
+  src: FreeRouteToken;
+  dst: FreeRouteToken;
   srcSpent: bigint; // src consumer units actually spent
   dstReceived: bigint; // dst consumer units actually received
   networkFee: bigint; // mutez, Σ (bakerFee + storageFee + allocationFee)
@@ -128,8 +128,8 @@ export async function buildSwapReceipt(params: {
   opHash: string;
   account: string; // Michelson address (tz1)
   aliasAddress: string;
-  src: ThreeRouteToken;
-  dst: ThreeRouteToken;
+  src: FreeRouteToken;
+  dst: FreeRouteToken;
   quotedPay: bigint;
   minOut: bigint;
   before: { xtz: bigint; src: bigint; dst: bigint }; // src/dst = that token's balance at snapshot (consumer units)

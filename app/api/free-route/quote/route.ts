@@ -1,8 +1,8 @@
-// GET /api/3route/quote — pricing only, keyed server-side.
+// GET /api/free-route/quote — pricing only, keyed server-side.
 import type { NextRequest } from 'next/server';
 import { serializeQuote } from '@sdk/index.js';
-import { threeRoute } from '@/lib/server/threeRoute';
-import { parseQuoteQuery } from '@/lib/threeRouteDto';
+import { freeRoute } from '@/lib/server/freeRoute';
+import { parseQuoteQuery } from '@/lib/freeRouteDto';
 
 export async function GET(req: NextRequest) {
   let query;
@@ -12,7 +12,7 @@ export async function GET(req: NextRequest) {
     return Response.json({ error: (e as Error).message }, { status: 400 });
   }
   try {
-    return Response.json(serializeQuote(await threeRoute.getQuote(query))); // model -> DTO (JSON can't carry bigint)
+    return Response.json(serializeQuote(await freeRoute.getQuote(query))); // model -> DTO (JSON can't carry bigint)
   } catch (e) {
     return Response.json({ error: (e as Error).message }, { status: 502 });
   }

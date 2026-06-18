@@ -1,8 +1,8 @@
-// GET /api/3route/swap — pricing + router calldata, keyed server-side (calldata is public; only the key is secret).
+// GET /api/free-route/swap — pricing + router calldata, keyed server-side (calldata is public; only the key is secret).
 import type { NextRequest } from 'next/server';
 import { serializeSwap } from '@sdk/index.js';
-import { threeRoute } from '@/lib/server/threeRoute';
-import { parseSwapQuery } from '@/lib/threeRouteDto';
+import { freeRoute } from '@/lib/server/freeRoute';
+import { parseSwapQuery } from '@/lib/freeRouteDto';
 
 export async function GET(req: NextRequest) {
   let query;
@@ -12,7 +12,7 @@ export async function GET(req: NextRequest) {
     return Response.json({ error: (e as Error).message }, { status: 400 });
   }
   try {
-    return Response.json(serializeSwap(await threeRoute.getSwap(query))); // model -> DTO (JSON can't carry bigint)
+    return Response.json(serializeSwap(await freeRoute.getSwap(query))); // model -> DTO (JSON can't carry bigint)
   } catch (e) {
     return Response.json({ error: (e as Error).message }, { status: 502 });
   }

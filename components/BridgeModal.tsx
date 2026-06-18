@@ -6,7 +6,7 @@ import { useUi } from '@/lib/ui';
 import { useBalances } from '@/lib/hooks';
 import { buildSwapBatch, sendWalletGroup, type SwapDetails } from '@/lib/ops';
 import { isXtz } from '@/lib/sdk';
-import type { ThreeRouteToken } from '@/lib/sdk';
+import type { FreeRouteToken } from '@/lib/sdk';
 import { fmtUnits } from '@/lib/format';
 import { useHistory } from '@/lib/history';
 import { fetchErc20Balance, fetchXtzBalance } from '@/lib/tzkt';
@@ -23,7 +23,7 @@ const SLIPPAGES = [
 const MIN_SLIPPAGE_BPS = 0;
 const MAX_SLIPPAGE_BPS = 4900;
 
-export function BridgeModal({ src, dst, amount, onClose }: { src: ThreeRouteToken; dst: ThreeRouteToken; amount: bigint; onClose: () => void }) {
+export function BridgeModal({ src, dst, amount, onClose }: { src: FreeRouteToken; dst: FreeRouteToken; amount: bigint; onClose: () => void }) {
   const { tezos, michelsonAddress, aliasAddress } = useWallet();
   const refresh = useUi((s) => s.refresh);
   const addSwap = useHistory((s) => s.addSwap);
@@ -177,7 +177,7 @@ export function BridgeModal({ src, dst, amount, onClose }: { src: ThreeRouteToke
           </div>
           {slippageBps > 500 && <p className="mt-1.5 text-[11px] text-amber-400">High slippage — you may overpay.</p>}
           {slippageBps < 10 && <p className="mt-1.5 text-[11px] text-amber-400">Very low — the swap may revert on a thin pool.</p>}
-          <p className="mt-1.5 text-[11px] text-slate-500">quote via 3route{refreshInSec !== null ? ` · updating in ${refreshInSec}s` : ''}</p>
+          <p className="mt-1.5 text-[11px] text-slate-500">quote via free-route{refreshInSec !== null ? ` · updating in ${refreshInSec}s` : ''}</p>
         </div>
 
         {/* review */}
