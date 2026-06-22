@@ -15,16 +15,24 @@ interface Row {
 }
 
 const DEFAULT_COUNT = 4;
-const DEFAULT_PRICE = 0.004;
+const DEFAULT_PRICE = 0.01;
 
 // Predicted rows for a mint batch: the FA2 counter assigns ids, so the i-th token gets `base + i`.
-const buildRows = (base: number, n: number): Row[] =>
-  Array.from({ length: n }, (_, i) => ({ tokenId: base + i, name: nftName(base + i), priceXtz: DEFAULT_PRICE }));
+const buildRows = (base: number, n: number, priceXtz: number): Row[] =>
+  Array.from({ length: n }, (_, i) => ({ tokenId: base + i, name: nftName(base + i), priceXtz }));
+
+// Resize the preview to `n` rows, keeping prices already set on surviving ids; new rows take the default.
+const resizeRows = (base: number, n: number, priceXtz: number, prev: Row[]): Row[] =>
+  Array.from({ length: n }, (_, i) => {
+    const tokenId = base + i;
+    return prev.find((r) => r.tokenId === tokenId) ?? { tokenId, name: nftName(tokenId), priceXtz };
+  });
 
 export function SellerPanel() {
   const { connected, michelsonAddress, tezos } = useWallet();
   const refresh = useUi((s) => s.refresh);
   const [count, setCount] = useState(DEFAULT_COUNT);
+  const [defaultPrice, setDefaultPrice] = useState(DEFAULT_PRICE); // applied to new/rebuilt rows
   const [baseId, setBaseId] = useState<number | null>(null); // FA2 counter, fetched once (not per keystroke)
   const [rows, setRows] = useState<Row[]>([]);
   const [busy, setBusy] = useState(false);
@@ -32,11 +40,11 @@ export function SellerPanel() {
 
   // Read the FA2 counter and (re)build the preview rows. Called on mount, on Regenerate, and after a mint
   // (the counter advances) — NOT on count changes, which rebuild locally from the cached base.
-  const reload = useCallback(async (n: number) => {
+  const reload = useCallback(async (n: number, priceXtz: number) => {
     try {
       const base = await fetchNextTokenId();
       setBaseId(base);
-      setRows(buildRows(base, n));
+      setRows(buildRows(base, n, priceXtz));
     } catch (e) {
       setBaseId(null);
       setRows([]);
@@ -45,7 +53,7 @@ export function SellerPanel() {
   }, []);
 
   useEffect(() => {
-    void reload(DEFAULT_COUNT);
+    void reload(DEFAULT_COUNT, DEFAULT_PRICE);
   }, [reload]);
 
   const setPrice = (tokenId: number, priceXtz: number) =>
@@ -63,8 +71,12 @@ export function SellerPanel() {
       const items: SellerItem[] = rows.map((r) => ({ priceMutez: Math.round(r.priceXtz * 1e6) }));
       const ops = buildMintListOps(michelsonAddress, items, base);
       await sendChunked(tezos, ops);
-      setStatus({ ok: true, msg: `Minted & listed ${rows.length} NFTs` });
-      await reload(count); // counter advanced — refresh the preview ids
+      // The counter advanced by exactly the number of mints. Predict the next base locally instead of
+      // re-reading via tzkt, whose indexer lags the just-confirmed block and would still report the old id.
+      const nextBase = base + items.length;
+      setBaseId(nextBase);
+      setRows(buildRows(nextBase, count, defaultPrice));
+      setStatus({ ok: true, msg: `Minted & listed ${items.length} NFTs` });
       refresh();
     } catch (e) {
       setStatus({ ok: false, msg: (e as Error).message });
@@ -88,7 +100,8 @@ export function SellerPanel() {
               onChange={(e) => {
                 const n = Math.max(1, Math.min(20, Number(e.target.value) || 1));
                 setCount(n);
-                if (baseId !== null) setRows(buildRows(baseId, n)); // rebuild locally — no network per keystroke
+                // rebuild locally (no network), keeping set prices and applying the default to new rows
+                if (baseId !== null) setRows((prev) => resizeRows(baseId, n, defaultPrice, prev));
               }}
             />
           </div>
@@ -100,10 +113,14 @@ export function SellerPanel() {
               min={0}
               className="input w-32"
               defaultValue={DEFAULT_PRICE}
-              onChange={(e) => setAllPrices(Number(e.target.value) || 0)}
+              onChange={(e) => {
+                const p = Number(e.target.value) || 0;
+                setDefaultPrice(p); // remembered so a later count change reuses it
+                setAllPrices(p);
+              }}
             />
           </div>
-          <button className="btn-ghost" onClick={() => void reload(count)} disabled={busy}>
+          <button className="btn-ghost" onClick={() => void reload(count, defaultPrice)} disabled={busy}>
             ↻ Regenerate
           </button>
           <button className="btn-primary ml-auto" onClick={() => void mintAndList()} disabled={!connected || busy || rows.length === 0}>
