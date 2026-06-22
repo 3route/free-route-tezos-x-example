@@ -1,5 +1,5 @@
 import 'server-only'; // build-time guard: importing this into a client bundle is an error
-import { FreeRouteClient, tezosXPreviewnet } from '@sdk/index.js';
+import { FreeRouteClient, tezosXPreviewnet } from '@baking-bad/free-route-tezos-x';
 
 // The keyed free-route client — server-side only; the api key (server-only env, not NEXT_PUBLIC) never hits the browser.
 export const freeRoute = new FreeRouteClient({

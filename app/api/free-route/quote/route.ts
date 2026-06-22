@@ -1,6 +1,6 @@
 // GET /api/free-route/quote — pricing only, keyed server-side.
 import type { NextRequest } from 'next/server';
-import { serializeQuote } from '@sdk/index.js';
+import { serializeQuote } from '@baking-bad/free-route-tezos-x';
 import { freeRoute } from '@/lib/server/freeRoute';
 import { parseQuoteQuery } from '@/lib/freeRouteDto';
 

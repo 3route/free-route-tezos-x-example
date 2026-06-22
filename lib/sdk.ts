@@ -13,11 +13,11 @@ export {
   buildBatchTransaction,
   resolveApproval,
   xtzMutezToWei,
-} from '@sdk/index.js';
-export type { FreeRouteToken, ApprovalMode } from '@sdk/index.js';
+} from '@baking-bad/free-route-tezos-x';
+export type { FreeRouteToken, ApprovalMode } from '@baking-bad/free-route-tezos-x';
 
-import type { Quote, QuoteQuery, QuoteResponseDto, Swap, SwapResponseDto, FreeRouteApi, FreeRouteToken } from '@sdk/index.js';
-import { parseQuote, parseSwap } from '@sdk/index.js';
+import type { Quote, QuoteQuery, QuoteResponseDto, Swap, SwapResponseDto, FreeRouteApi, FreeRouteToken } from '@baking-bad/free-route-tezos-x';
+import { parseQuote, parseSwap } from '@baking-bad/free-route-tezos-x';
 import { queryToParams } from './freeRouteDto';
 
 // Same-origin call to our endpoints (no key — injected server-side); surfaces the server's {error} message.

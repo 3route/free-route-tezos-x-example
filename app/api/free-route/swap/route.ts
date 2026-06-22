@@ -1,6 +1,6 @@
 // GET /api/free-route/swap — pricing + router calldata, keyed server-side (calldata is public; only the key is secret).
 import type { NextRequest } from 'next/server';
-import { serializeSwap } from '@sdk/index.js';
+import { serializeSwap } from '@baking-bad/free-route-tezos-x';
 import { freeRoute } from '@/lib/server/freeRoute';
 import { parseSwapQuery } from '@/lib/freeRouteDto';
 

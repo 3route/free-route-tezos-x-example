@@ -2,7 +2,7 @@
 // parse{Quote,Swap}Query validate UNTRUSTED structural params (addresses/amount/flags) on the server side —
 // parseSwapQuery additionally requires `from`. Slippage is intentionally NOT range-checked here: the SDK
 // (getSwap) owns that contract and throws on bad input, so we only parse it.
-import type { EvmAddress, QuoteQuery, SwapQuery } from '@sdk/index.js';
+import type { EvmAddress, QuoteQuery, SwapQuery } from '@baking-bad/free-route-tezos-x';
 
 export function queryToParams(q: QuoteQuery & Partial<Pick<SwapQuery, 'from' | 'receiver' | 'slippageBps'>>): URLSearchParams {
   const p = new URLSearchParams({ src: q.src, dst: q.dst, amount: q.amount.toString() });
