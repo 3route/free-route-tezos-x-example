@@ -12,8 +12,7 @@
   },
   "dependencies": {
     "@airgap/beacon-dapp": "^4.8.1",
-    "@baking-bad/free-route-tezos-x": "^0.1.0",
-    "@noble/hashes": "^1.8.0",
+    "@baking-bad/free-route-tezos-x": "^0.1.1",
     "@taquito/beacon-wallet": "~24.2.0",
     "@taquito/michelson-encoder": "~24.2.0",
     "@taquito/rpc": "~24.2.0",
