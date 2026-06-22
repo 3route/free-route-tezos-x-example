@@ -7,6 +7,9 @@ import { fetchNextTokenId } from '@/lib/tzkt';
 import { nftName } from '@/lib/names';
 import { short } from '@/lib/format';
 import { NftArt } from './NftArt';
+import { MintReceiptModal } from './MintReceiptModal';
+import { useHistory } from '@/lib/history';
+import type { MintReceipt } from '@/lib/receipt';
 
 interface Row {
   tokenId: number;
@@ -31,12 +34,14 @@ const resizeRows = (base: number, n: number, priceXtz: number, prev: Row[]): Row
 export function SellerPanel() {
   const { connected, michelsonAddress, tezos } = useWallet();
   const refresh = useUi((s) => s.refresh);
+  const addMint = useHistory((s) => s.addMint);
   const [count, setCount] = useState(DEFAULT_COUNT);
   const [defaultPrice, setDefaultPrice] = useState(DEFAULT_PRICE); // applied to new/rebuilt rows
   const [baseId, setBaseId] = useState<number | null>(null); // FA2 counter, fetched once (not per keystroke)
   const [rows, setRows] = useState<Row[]>([]);
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState<{ ok: boolean; msg: string } | null>(null);
+  const [receipt, setReceipt] = useState<MintReceipt | null>(null);
 
   // Read the FA2 counter and (re)build the preview rows. Called on mount, on Regenerate, and after a mint
   // (the counter advances) — NOT on count changes, which rebuild locally from the cached base.
@@ -68,15 +73,20 @@ export function SellerPanel() {
     try {
       // re-read the counter right before sending so the predicted ids are as fresh as possible
       const base = await fetchNextTokenId();
-      const items: SellerItem[] = rows.map((r) => ({ priceMutez: Math.round(r.priceXtz * 1e6) }));
+      // actual minted ids use this fresh `base` (i-th token => base + i); prices come from the rows
+      const minted = rows.map((r, i) => ({ tokenId: base + i, name: nftName(base + i), priceMutez: Math.round(r.priceXtz * 1e6) }));
+      const items: SellerItem[] = minted.map((it) => ({ priceMutez: it.priceMutez }));
       const ops = buildMintListOps(michelsonAddress, items, base);
-      await sendChunked(tezos, ops);
+      const hashes = await sendChunked(tezos, ops);
       // The counter advanced by exactly the number of mints. Predict the next base locally instead of
       // re-reading via tzkt, whose indexer lags the just-confirmed block and would still report the old id.
       const nextBase = base + items.length;
       setBaseId(nextBase);
       setRows(buildRows(nextBase, count, defaultPrice));
       setStatus({ ok: true, msg: `Minted & listed ${items.length} NFTs` });
+      const mintReceipt: MintReceipt = { hashes, items: minted };
+      setReceipt(mintReceipt);
+      addMint(mintReceipt); // record in the Activity log so it can be reopened
       refresh();
     } catch (e) {
       setStatus({ ok: false, msg: (e as Error).message });
@@ -157,6 +167,8 @@ export function SellerPanel() {
           </div>
         ))}
       </div>
+
+      {receipt && <MintReceiptModal receipt={receipt} onClose={() => setReceipt(null)} />}
     </div>
   );
 }

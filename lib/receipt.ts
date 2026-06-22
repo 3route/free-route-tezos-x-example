@@ -167,3 +167,15 @@ export async function buildSwapReceipt(params: {
     receivedAtLeastMin: dstReceived >= params.minOut,
   };
 }
+
+// ---------------- SELLER: mint+list record (no reconciliation — just the op hashes + what was listed) ----------------
+export interface MintReceiptItem {
+  tokenId: number;
+  name: string;
+  priceMutez: number;
+}
+
+export interface MintReceipt {
+  hashes: string[]; // one per chunked batch (mint+list is split under the gas ceiling)
+  items: MintReceiptItem[];
+}
