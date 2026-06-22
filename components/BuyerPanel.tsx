@@ -1,4 +1,5 @@
 'use client';
+import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
 import { useListings, usePriceCurrency, useTokens } from '@/lib/hooks';
 import { useWallet } from '@/lib/wallet';
@@ -103,8 +104,17 @@ export function BuyerPanel() {
       </div>
 
       {listings.length === 0 && (
-        <div className="card text-sm text-slate-500">
-          {loading ? 'Loading listings…' : 'No active listings. Switch to Seller mode to mint & list some.'}
+        <div className="card flex flex-col items-start gap-3 text-sm text-slate-500">
+          {loading ? (
+            'Loading listings…'
+          ) : (
+            <>
+              <span>No active listings yet — mint &amp; list some to try a buy.</span>
+              <Link href="/seller" className="btn-primary">
+                Go to Seller
+              </Link>
+            </>
+          )}
         </div>
       )}
 
