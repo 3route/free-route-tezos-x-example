@@ -14,7 +14,7 @@ export function Header() {
   const pathname = usePathname();
 
   return (
-    <header className="sticky top-0 z-20 border-b border-edge bg-ink/80 backdrop-blur">
+    <header className="sticky top-0 z-20 border-b border-edge bg-ink/80 backdrop-blur-sm">
       <div className="mx-auto flex max-w-7xl flex-wrap items-center gap-4 px-5 py-3">
         <div className="flex items-center gap-2">
           <div className="grid h-8 w-8 place-items-center rounded-lg bg-accent/20 text-accent">◈</div>

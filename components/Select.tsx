@@ -38,7 +38,7 @@ export function Select<T extends string>({
 
   return (
     <div className="relative" ref={ref}>
-      <button className="btn-ghost min-w-[9rem] justify-between" onClick={() => setOpen((o) => !o)}>
+      <button className="btn-ghost min-w-36 justify-between" onClick={() => setOpen((o) => !o)}>
         <span>{current?.label ?? value}</span>
         <svg
           width="14"

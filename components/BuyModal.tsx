@@ -207,7 +207,7 @@ export function BuyModal({ listing, onClose }: { listing: Listing; onClose: () =
                   setCustomSlippage(text);
                   setSlippageBps(Math.min(MAX_SLIPPAGE_BPS, Math.max(MIN_SLIPPAGE_BPS, Math.round(pct * 100))));
                 }}
-                className="w-14 bg-transparent text-right outline-none [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none"
+                className="w-14 bg-transparent text-right outline-hidden [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none"
               />
               %
             </span>
@@ -221,9 +221,9 @@ export function BuyModal({ listing, onClose }: { listing: Listing; onClose: () =
 
         {/* review */}
         <div className="text-sm">
-          <div className="relative min-h-[15rem]">
+          <div className="relative min-h-60">
             {err && !details && (
-              <div className="grid h-[15rem] place-items-center text-center text-xs text-rose-400">{err}</div>
+              <div className="grid h-60 place-items-center text-center text-xs text-rose-400">{err}</div>
             )}
             {details && token && (
             <div className={`space-y-3 transition-opacity ${quoting ? 'opacity-40' : 'opacity-100'}`}>

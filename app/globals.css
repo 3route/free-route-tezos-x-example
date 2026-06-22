@@ -1,38 +1,79 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import 'tailwindcss';
 
-:root {
-  color-scheme: dark;
+@theme {
+  --color-ink: #0b0e14;
+  --color-panel: #121723;
+  --color-edge: #222a3a;
+  --color-accent: #7c5cff;
+  --color-accent2: #21d4a8;
+
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, monospace;
 }
 
-body {
-  @apply bg-ink text-slate-200;
-  background-image: radial-gradient(1200px 600px at 80% -10%, rgba(124, 92, 255, 0.12), transparent 60%),
-    radial-gradient(900px 500px at 0% 0%, rgba(33, 212, 168, 0.08), transparent 55%);
-  min-height: 100vh;
+/*
+  The default border color has changed to `currentcolor` in Tailwind CSS v4,
+  so we've added these compatibility styles to make sure everything still
+  looks the same as it did with Tailwind CSS v3.
+
+  If we ever want to remove these styles, we need to add an explicit border
+  color utility to any element that depends on these defaults.
+*/
+@layer base {
+  *,
+  ::after,
+  ::before,
+  ::backdrop,
+  ::file-selector-button {
+    border-color: var(--color-gray-200, currentcolor);
+  }
 }
 
-@layer components {
-  .card {
-    @apply rounded-2xl border border-edge bg-panel/80 backdrop-blur p-5 shadow-xl shadow-black/30;
+@utility card {
+  @apply rounded-2xl border border-edge bg-panel/80 backdrop-blur-sm p-5 shadow-xl shadow-black/30;
+}
+
+@utility btn {
+  @apply inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-medium transition disabled:opacity-40 disabled:cursor-not-allowed;
+}
+
+@utility btn-primary {
+  @apply btn bg-accent text-white hover:bg-accent/85;
+}
+
+@utility btn-ghost {
+  @apply btn border border-edge bg-transparent hover:bg-white/5;
+}
+
+@utility input {
+  @apply w-full rounded-lg border border-edge bg-ink/60 px-3 py-2 text-sm outline-hidden focus:border-accent;
+}
+
+@utility chip {
+  @apply inline-flex items-center gap-1.5 rounded-full border border-edge bg-ink/50 px-2.5 py-1 text-xs;
+}
+
+@utility label {
+  @apply text-xs uppercase tracking-wider text-slate-400;
+}
+
+@layer utilities {
+  :root {
+    color-scheme: dark;
   }
-  .btn {
-    @apply inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-medium transition disabled:opacity-40 disabled:cursor-not-allowed;
-  }
-  .btn-primary {
-    @apply btn bg-accent text-white hover:bg-accent/85;
-  }
-  .btn-ghost {
-    @apply btn border border-edge bg-transparent hover:bg-white/5;
-  }
-  .input {
-    @apply w-full rounded-lg border border-edge bg-ink/60 px-3 py-2 text-sm outline-none focus:border-accent;
-  }
-  .chip {
-    @apply inline-flex items-center gap-1.5 rounded-full border border-edge bg-ink/50 px-2.5 py-1 text-xs;
-  }
-  .label {
-    @apply text-xs uppercase tracking-wider text-slate-400;
+
+  body {
+    @apply bg-ink text-slate-200;
+    background-image:
+      radial-gradient(
+        1200px 600px at 80% -10%,
+        rgba(124, 92, 255, 0.12),
+        transparent 60%
+      ),
+      radial-gradient(
+        900px 500px at 0% 0%,
+        rgba(33, 212, 168, 0.08),
+        transparent 55%
+      );
+    min-height: 100vh;
   }
 }
