@@ -109,10 +109,11 @@ export async function buildBuyBatch(
   // exact-out: size the XTZ out so the on-chain floor still covers the ask price
   // (targetForMinOut / getSwap enforce the 0..5000 bps contract, so no local clamp here)
   const minOutTarget = targetForMinOut(BigInt(ask.priceMutez), slippageBps);
+  const swapAmount = toEvm(minOutTarget, XTZ.address); // mutez -> wei for the EVM API
   const swap = await freeRoute.getSwap({
     src: payToken.address,
     dst: XTZ.address,
-    amount: toEvm(minOutTarget, XTZ.address),
+    amount: swapAmount,
     isExactOut: true,
     from: buyerAlias,
     receiver: buyerAlias,
@@ -191,10 +192,11 @@ export async function buildSwapBatch(
   const alias = michelsonToEvmAlias(account); // EVM identity that runs the swap
 
   // exact-in: any token -> any token (XTZ <-> ERC20, ERC20 <-> ERC20)
+  const swapAmount = toEvm(amount, src.address); // to wei for the EVM API
   const swap = await freeRoute.getSwap({
     src: src.address,
     dst: dst.address,
-    amount: toEvm(amount, src.address),
+    amount: swapAmount,
     isExactOut: false,
     from: alias,
     receiver: alias,
