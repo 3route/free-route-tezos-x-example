@@ -3,7 +3,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useBalances, useTokens } from '@/lib/hooks';
 import { useWallet } from '@/lib/wallet';
 import { useUi } from '@/lib/ui';
-import { XTZ, XTZ_ADDRESS, fromEvm, isXtz, freeRoute, toEvm } from '@/lib/sdk';
+import { XTZ, XTZ_ADDRESS, fromEvmUnits, isXtz, freeRoute, toEvmUnits } from '@/lib/sdk';
 import type { FreeRouteToken } from '@/lib/sdk';
 import { fmtUnits, parseUnits } from '@/lib/format';
 import { CFG } from '@/lib/config';
@@ -55,9 +55,9 @@ export function BridgePanel() {
     const run = async () => {
       setPreviewing(true);
       try {
-        const q = await freeRoute.getQuote({ src: fromTok.address, dst: toTok.address, amount: toEvm(amountBase, fromTok.address) });
+        const q = await freeRoute.getQuote({ src: fromTok.address, dst: toTok.address, amount: toEvmUnits(amountBase, fromTok.address) });
         if (!cancelled) {
-          setOutPreview(fromEvm(q.dstAmount, toTok.address));
+          setOutPreview(fromEvmUnits(q.dstAmount, toTok.address));
           setPreviewAt(Date.now());
         }
       } catch {

@@ -4,7 +4,7 @@ import { OpKind } from '@taquito/taquito';
 import type { ParamsWithKind, TezosToolkit } from '@taquito/taquito';
 import type { MichelsonV1Expression } from '@taquito/rpc';
 import { CFG } from './config';
-import { XTZ, buildBatchTransaction, buildSwapOperation, fromEvm, isXtz, michelsonToEvmAlias, objkt, resolveApproval, targetForMinOut, freeRoute, toEvm } from './sdk';
+import { XTZ, buildBatchTransaction, buildSwapOperation, fromEvmUnits, isXtz, michelsonToEvmAlias, objkt, resolveApproval, targetForMinOut, freeRoute, toEvmUnits } from './sdk';
 import type { ApprovalMode, FreeRouteToken } from './sdk';
 import { fmtUnits } from './format';
 
@@ -109,7 +109,7 @@ export async function buildBuyBatch(
   // exact-out: size the XTZ out so the on-chain floor still covers the ask price
   // (targetForMinOut / getSwap enforce the 0..5000 bps contract, so no local clamp here)
   const minOutTarget = targetForMinOut(BigInt(ask.priceMutez), slippageBps);
-  const swapAmount = toEvm(minOutTarget, XTZ.address); // mutez -> wei for the EVM API
+  const swapAmount = toEvmUnits(minOutTarget, XTZ.address); // mutez -> wei for the EVM API
   const swap = await freeRoute.getSwap({
     src: payToken.address,
     dst: XTZ.address,
@@ -135,8 +135,8 @@ export async function buildBuyBatch(
   const fulfillOp = objkt.buildFulfillAsk({ marketplace: CFG.objkt, askId: ask.askId, editions: 1, amountMutez: ask.priceMutez });
   const ops = buildBatchTransaction(swapOps, fulfillOp);
 
-  const expectedOutMutez = Number(fromEvm(swap.dstAmount, XTZ.address));
-  const minOutMutez = Number(fromEvm(swap.dstAmountMin, XTZ.address)); // == price after our sizing
+  const expectedOutMutez = Number(fromEvmUnits(swap.dstAmount, XTZ.address));
+  const minOutMutez = Number(fromEvmUnits(swap.dstAmountMin, XTZ.address)); // == price after our sizing
   const changeMutez = Math.max(0, expectedOutMutez - ask.priceMutez);
 
   // steps mirror the ACTUAL ops (2 / 3 / 4 in the group, depending on the approval mode).
@@ -192,7 +192,7 @@ export async function buildSwapBatch(
   const alias = michelsonToEvmAlias(account); // EVM identity that runs the swap
 
   // exact-in: any token -> any token (XTZ <-> ERC20, ERC20 <-> ERC20)
-  const swapAmount = toEvm(amount, src.address); // to wei for the EVM API
+  const swapAmount = toEvmUnits(amount, src.address); // to wei for the EVM API
   const swap = await freeRoute.getSwap({
     src: src.address,
     dst: dst.address,
@@ -216,7 +216,7 @@ export async function buildSwapBatch(
 
   // approve(s) + swap -> one atomic group; native-XTZ output auto-forwards to your Michelson address
   const ops = buildSwapOperation({ swap, gateway: CFG.gateway, srcAddress: src.address, approval });
-  const payAmount = fromEvm(swap.srcAmount, src.address);
+  const payAmount = fromEvmUnits(swap.srcAmount, src.address);
 
   // steps mirror the ACTUAL ops (1 / 2 / 3, depending on the approval mode).
   const approveExact = { kind: 'approve (call_evm)', detail: `approve exactly ${fmtUnits(payAmount, src.decimals, src.decimals)} ${src.symbol} to the free-route router` };
@@ -234,8 +234,8 @@ export async function buildSwapBatch(
       src,
       dst,
       payAmount,
-      expectedOut: fromEvm(swap.dstAmount, dst.address),
-      minOut: fromEvm(swap.dstAmountMin, dst.address),
+      expectedOut: fromEvmUnits(swap.dstAmount, dst.address),
+      minOut: fromEvmUnits(swap.dstAmountMin, dst.address),
       slippageBps,
       router: swap.tx.to,
       approval,

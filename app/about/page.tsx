@@ -32,7 +32,7 @@ interface PageDoc {
 const BUYER_CODE = `import { TezosToolkit } from '@taquito/taquito';
 import { InMemorySigner } from '@taquito/signer';
 import {
-  FreeRouteTezosX, tezosXMainnet, XTZ, toEvm, targetForMinOut,
+  FreeRouteTezosX, tezosXMainnet, XTZ, toEvmUnits, targetForMinOut,
   michelsonToEvmAlias, resolveApproval, objkt, buildBatchTransaction,
 } from '@baking-bad/free-route-tezos-x';
 
@@ -55,7 +55,7 @@ const slippageBps = 200;   // 2%
 
 // exact-out: size the XTZ out so the on-chain floor still covers the price
 const minOutTarget = targetForMinOut(priceMutez, slippageBps);
-const swapAmount = toEvm(minOutTarget, XTZ.address); // mutez -> wei for the EVM API
+const swapAmount = toEvmUnits(minOutTarget, XTZ.address); // mutez -> wei for the EVM API
 const swap = await freeRoute.getSwap({
   src: payToken.address,
   dst: XTZ.address,
@@ -91,7 +91,7 @@ await op.confirmation();`;
 const BRIDGE_CODE = `import { TezosToolkit } from '@taquito/taquito';
 import { InMemorySigner } from '@taquito/signer';
 import {
-  FreeRouteTezosX, tezosXMainnet, XTZ, toEvm, isXtz,
+  FreeRouteTezosX, tezosXMainnet, XTZ, toEvmUnits, isXtz,
   michelsonToEvmAlias, resolveApproval,
 } from '@baking-bad/free-route-tezos-x';
 
@@ -115,7 +115,7 @@ const dst = XTZ;            // receive native XTZ
 const amount = 1_000_000n; // 1 USDC
 
 // exact-in: any token -> any token (XTZ <-> ERC20, ERC20 <-> ERC20)
-const swapAmount = toEvm(amount, src.address); // to wei for the EVM API
+const swapAmount = toEvmUnits(amount, src.address); // to wei for the EVM API
 const swap = await freeRoute.getSwap({
   src: src.address,
   dst: dst.address,
