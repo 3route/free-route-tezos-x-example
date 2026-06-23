@@ -104,25 +104,32 @@ export async function buildBuyBatch(
   payToken: FreeRouteToken,
   slippageBps: number,
 ): Promise<{ ops: ParamsWithKind[]; details: BuyDetails }> {
-  // Size the exact-out target so the on-chain floor (minOut = target × (1 − slip)) covers the NFT price.
-  // The SDK (targetForMinOut / getSwap) enforces the 0..5000 bps contract, so no local clamp here.
-  const target = targetForMinOut(BigInt(ask.priceMutez), slippageBps);
-  const alias = michelsonToEvmAlias(buyerMichelsonAddress);
+  const buyerAlias = michelsonToEvmAlias(buyerMichelsonAddress); // EVM identity holding the ERC20
 
-  // 1. quote exact-out payToken -> XTZ. 2. read the on-chain allowance -> pick the minimal approval mode.
+  // exact-out: size the XTZ out so the on-chain floor still covers the ask price
+  // (targetForMinOut / getSwap enforce the 0..5000 bps contract, so no local clamp here)
+  const minOutTarget = targetForMinOut(BigInt(ask.priceMutez), slippageBps);
   const swap = await freeRoute.getSwap({
     src: payToken.address,
     dst: XTZ.address,
-    amount: toEvm(target, XTZ.address),
+    amount: toEvm(minOutTarget, XTZ.address),
     isExactOut: true,
-    from: alias,
-    receiver: alias,
+    from: buyerAlias,
+    receiver: buyerAlias,
     slippageBps,
   });
   const srcAmount = swap.srcAmount;
-  const approval = await resolveApproval({ evmRpc: CFG.evmRpc, token: payToken.address, owner: alias, spender: swap.tx.to, amount: srcAmount });
 
-  // 3. swap ops for that mode + the marketplace fulfill (paid by the bridged XTZ) — one atomic group.
+  // read the on-chain allowance -> pick the minimal safe approval mode (none / approve / reset+approve)
+  const approval = await resolveApproval({
+    evmRpc: CFG.evmRpc,
+    token: payToken.address,
+    owner: buyerAlias,
+    spender: swap.tx.to,
+    amount: srcAmount,
+  });
+
+  // approve(s) + swap, composed with the objkt fulfill (paid by the bridged XTZ) -> one atomic group
   const swapOps = buildSwapOperation({ swap, gateway: CFG.gateway, srcAddress: payToken.address, approval });
   const fulfillOp = objkt.buildFulfillAsk({ marketplace: CFG.objkt, askId: ask.askId, editions: 1, amountMutez: ask.priceMutez });
   const ops = buildBatchTransaction(swapOps, fulfillOp);
@@ -181,7 +188,9 @@ export async function buildSwapBatch(
   amount: bigint,
   slippageBps: number,
 ): Promise<{ ops: ParamsWithKind[]; details: SwapDetails }> {
-  const alias = michelsonToEvmAlias(account);
+  const alias = michelsonToEvmAlias(account); // EVM identity that runs the swap
+
+  // exact-in: any token -> any token (XTZ <-> ERC20, ERC20 <-> ERC20)
   const swap = await freeRoute.getSwap({
     src: src.address,
     dst: dst.address,
@@ -191,9 +200,19 @@ export async function buildSwapBatch(
     receiver: alias,
     slippageBps,
   });
+
+  // native XTZ carries value as msg.value (no approve); an ERC20 picks the minimal safe mode (none / approve / reset+approve)
   const approval: ApprovalMode = isXtz(src.address)
-    ? 'none' // native XTZ input carries value as msg.value — no approve
-    : await resolveApproval({ evmRpc: CFG.evmRpc, token: src.address, owner: alias, spender: swap.tx.to, amount: swap.srcAmount });
+    ? 'none'
+    : await resolveApproval({
+        evmRpc: CFG.evmRpc,
+        token: src.address,
+        owner: alias,
+        spender: swap.tx.to,
+        amount: swap.srcAmount,
+      });
+
+  // approve(s) + swap -> one atomic group; native-XTZ output auto-forwards to your Michelson address
   const ops = buildSwapOperation({ swap, gateway: CFG.gateway, srcAddress: src.address, approval });
   const payAmount = fromEvm(swap.srcAmount, src.address);
 

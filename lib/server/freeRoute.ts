@@ -5,5 +5,5 @@ import { FreeRouteClient, tezosXPreviewnet } from '@baking-bad/free-route-tezos-
 export const freeRoute = new FreeRouteClient({
   baseUrl: process.env.FREE_ROUTE_API ?? 'http://127.0.0.1:3000',
   chainId: tezosXPreviewnet.chainId,
-  apiKey: process.env.FREE_ROUTE_API_KEY, // 'YourApiKey' for a hosted server; omit for the keyless dev server
+  apiKey: process.env.FREE_ROUTE_API_KEY, // free-route API key
 });
