@@ -142,6 +142,61 @@ const ops = freeRoute.buildSwapOperation({ swap, srcAddress: src.address, approv
 const op = await tezos.contract.batch().with(ops).send(); // a single signature
 await op.confirmation();`;
 
+const SERVER_CODE = `// lib/server/freeRoute.ts -- the free-route API key lives here, never in the browser
+import 'server-only';
+import { FreeRouteClient, tezosXPreviewnet, serializeQuote, serializeSwap } from '@baking-bad/free-route-tezos-x';
+
+export const freeRoute = new FreeRouteClient({
+  baseUrl: process.env.FREE_ROUTE_API!,
+  chainId: tezosXPreviewnet.chainId,
+  apiKey: process.env.FREE_ROUTE_API_KEY, // server-only env, never NEXT_PUBLIC
+});
+
+// thin proxy endpoints -- each route.ts exports a GET over the keyed client above
+import type { NextRequest } from 'next/server';
+import { parseQuoteQuery, parseSwapQuery } from '@/lib/freeRouteDto'; // app helpers: validate untrusted params
+
+// app/api/free-route/tokens/route.ts -- plain JSON, no bigints, no serialize step
+export async function GET() {
+  const tokens = await freeRoute.getTokens();
+  return Response.json(tokens);
+}
+
+// app/api/free-route/quote/route.ts -- serialize* turns the model into a wire DTO (JSON can't carry bigint)
+export async function GET(req: NextRequest) {
+  const query = parseQuoteQuery(req.nextUrl.searchParams); // validate untrusted params
+  const quote = await freeRoute.getQuote(query);
+  return Response.json(serializeQuote(quote));
+}
+
+// app/api/free-route/swap/route.ts
+export async function GET(req: NextRequest) {
+  const query = parseSwapQuery(req.nextUrl.searchParams);
+  const swap = await freeRoute.getSwap(query);
+  return Response.json(serializeSwap(swap));
+}`;
+
+const CLIENT_CODE = `// lib/sdk.ts -- a keyless client implementing the SDK's FreeRouteApi, via our proxy
+import {
+  parseQuote, parseSwap,
+  type FreeRouteApi, type FreeRouteToken, type QuoteQuery, type QuoteResponseDto, type SwapResponseDto,
+} from '@baking-bad/free-route-tezos-x';
+import { queryToParams } from '@/lib/freeRouteDto'; // app helper: query object -> query string
+
+// same-origin fetch to our proxy endpoints (the key is injected server-side)
+async function get<T>(path: string, query?: QuoteQuery): Promise<T> {
+  const qs = query ? '?' + queryToParams(query) : '';
+  const res = await fetch('/api/free-route/' + path + qs);
+  return res.json();
+}
+
+// FreeRouteApi is the SDK's read surface; the SDK parses each wire DTO back into a typed model.
+export const freeRoute: FreeRouteApi = {
+  getTokens: () => get<FreeRouteToken[]>('tokens'),
+  getQuote: async (q) => parseQuote(await get<QuoteResponseDto>('quote', q)), // bigints restored
+  getSwap: async (q) => parseSwap(await get<SwapResponseDto>('swap', q)),
+};`;
+
 const PAGES: PageDoc[] = [
   {
     title: 'Buyer',
@@ -179,6 +234,8 @@ export default async function AboutPage() {
       ),
     ),
   );
+  const serverHtml = await codeToHtml(SERVER_CODE, { lang: 'ts', theme: 'github-dark' });
+  const clientHtml = await codeToHtml(CLIENT_CODE, { lang: 'ts', theme: 'github-dark' });
 
   return (
     <div className="space-y-5">
@@ -223,9 +280,42 @@ export default async function AboutPage() {
         </p>
       </div>
 
-      {/* per-page */}
+      {/* server-side reads (BFF) */}
+      <div className="card">
+        <div className="label mb-2">Keeping the API key server-side</div>
+        <p className="text-sm text-slate-400">
+          For brevity the per-page samples build the client inline. A real dApp — this one included — keeps the keyed
+          free-route reads on its own server and proxies them, so the API key never reaches the browser. The SDK ships the
+          pieces for exactly this split: a reads-only <span className="font-mono text-slate-300">FreeRouteClient</span> for
+          the server, <span className="font-mono text-slate-300">serialize*</span> /{' '}
+          <span className="font-mono text-slate-300">parse*</span> DTO helpers so quotes and swaps cross the HTTP boundary
+          without losing their bigint fields, and a <span className="font-mono text-slate-300">FreeRouteApi</span>{' '}
+          interface the browser implements as a thin, keyless client over those endpoints.{' '}
+          <a
+            className="text-accent hover:underline"
+            href="https://github.com/3route/free-route-tezos-x-example/tree/main/app/api/free-route"
+            target="_blank"
+            rel="noreferrer"
+          >
+            See the source
+          </a>
+          .
+        </p>
+        <div className="mt-3 space-y-3">
+          <div>
+            <div className="label mb-1.5">Server</div>
+            <CodeBlock html={serverHtml} code={SERVER_CODE} />
+          </div>
+          <div>
+            <div className="label mb-1.5">Client</div>
+            <CodeBlock html={clientHtml} code={CLIENT_CODE} />
+          </div>
+        </div>
+      </div>
+
+      {/* pages */}
       <div className="space-y-4">
-        <h2 className="px-1 text-sm font-semibold text-slate-300">What each page demonstrates</h2>
+        <h2 className="px-1 text-sm font-semibold text-slate-300">Pages</h2>
         {PAGES.map((p) => (
           <div key={p.href} className="card">
             <div className="flex items-baseline justify-between gap-3">
@@ -245,11 +335,7 @@ export default async function AboutPage() {
         ))}
       </div>
 
-      <p className="px-1 text-xs text-slate-600">
-        Reads (<span className="font-mono">getTokens</span> / <span className="font-mono">getQuote</span> /{' '}
-        <span className="font-mono">getSwap</span>) are proxied through this app&apos;s server route so an API key stays
-        off the client; the op-builders run in the browser. Running on Tezos X previewnet.
-      </p>
+      <p className="px-1 text-xs text-slate-600">Running on Tezos X previewnet.</p>
     </div>
   );
 }
