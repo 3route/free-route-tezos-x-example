@@ -4,8 +4,9 @@ import type { ReactNode } from 'react';
 import { AppShell } from '@/components/AppShell';
 
 export const metadata: Metadata = {
-  title: 'objkt · pay with any ERC20',
-  description: 'Buy an XTZ-priced objkt NFT paying with any EVM ERC20 — one atomic Tezos op-group (pure-SDK).',
+  title: '3Route Tezos X · SDK demo',
+  description:
+    'Reference dApp for @baking-bad/free-route-tezos-x — pay any ERC20 for XTZ-priced assets or swap any token, in one atomic op-group.',
 };
 
 export default function RootLayout({ children }: { children: ReactNode }) {

@@ -29,8 +29,8 @@ export function Header() {
         <div className="flex items-center gap-2">
           <div className="grid h-8 w-8 place-items-center rounded-lg bg-accent/20 text-accent">◈</div>
           <div>
-            <div className="text-sm font-semibold leading-tight">objkt · pay with any ERC20</div>
-            <div className="text-[11px] text-slate-500">Tezos X previewnet · one atomic op-group</div>
+            <div className="text-sm font-semibold leading-tight">3Route Tezos X · SDK demo</div>
+            <div className="text-[11px] text-slate-500">previewnet · one atomic op-group</div>
           </div>
         </div>
 
@@ -51,12 +51,12 @@ export function Header() {
 
         <div className="ml-auto flex items-center gap-2">
           <Link
-            href="/about"
+            href="/docs"
             className={`whitespace-nowrap rounded-lg border px-3 py-1.5 text-sm font-medium transition ${
-              pathname === '/about' ? 'border-accent bg-accent/15 text-white' : 'border-edge text-slate-300 hover:bg-white/5'
+              pathname === '/docs' ? 'border-accent bg-accent/15 text-white' : 'border-edge text-slate-300 hover:bg-white/5'
             }`}
           >
-            About
+            Docs
           </Link>
           <a
             href={APP_REPO}

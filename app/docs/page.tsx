@@ -1,4 +1,4 @@
-// /about — what this demo is and how the package API is used. Static content; shell from AppShell.
+// /docs — what this demo is and how the package API is used. Static content; shell from AppShell.
 // Code samples are syntax-highlighted at build time with shiki (server-side — no client JS).
 import { codeToHtml } from 'shiki';
 import { CodeBlock } from '@/components/CodeBlock';
@@ -241,7 +241,7 @@ export default async function AboutPage() {
     <div className="space-y-5">
       {/* intro */}
       <div className="card">
-        <h1 className="text-lg font-semibold">About this demo</h1>
+        <h1 className="text-lg font-semibold">Demo docs</h1>
         <p className="mt-2 text-sm text-slate-400">
           A reference integration of{' '}
           <a className="font-mono text-accent hover:underline" href={NPM} target="_blank" rel="noreferrer">
