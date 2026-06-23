@@ -1,2 +1,6 @@
-// / — Buyer (default). Shell (header/log/wallet) lives in app/layout.tsx via AppShell.
-export { BuyerPanel as default } from '@/components/BuyerPanel';
+// / — canonical Buyer route is /buyer; redirect the root there.
+import { redirect } from 'next/navigation';
+
+export default function Home() {
+  redirect('/buyer');
+}
