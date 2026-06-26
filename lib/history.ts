@@ -4,7 +4,7 @@
 import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
 import type { BuyReceipt, MintReceipt, SwapReceipt } from './receipt';
-import type { FreeRouteToken } from './sdk';
+import type { FreeRouteToken } from '@baking-bad/free-route-tezos-x';
 
 export type HistoryEntry =
   | { id: number; ts: number; kind: 'buy'; receipt: BuyReceipt; token: FreeRouteToken; tokenId: string }

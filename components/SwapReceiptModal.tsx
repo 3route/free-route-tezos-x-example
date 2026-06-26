@@ -1,6 +1,6 @@
 'use client';
 import { fmtUnits } from '@/lib/format';
-import { isXtz } from '@/lib/sdk';
+import { isXtz } from '@baking-bad/free-route-tezos-x';
 import { CFG } from '@/lib/config';
 import type { SwapReceipt } from '@/lib/receipt';
 

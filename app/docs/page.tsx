@@ -76,8 +76,12 @@ const approval = await resolveApproval({
 });
 
 // approve(s) + swap, composed with the objkt fulfill -> one atomic group
-const swapOps = freeRoute.buildSwapOperation({ swap, srcAddress: payToken.address, approval });
-const fulfill = objkt.buildFulfillAsk({
+const swapOps = freeRoute.michelson.buildSwapOperation({
+  swap,
+  srcAddress: payToken.address,
+  approval,
+});
+const fulfill = objkt.buildMichelsonFulfillAskOperation({
   marketplace: OBJKT_MARKETPLACE,
   askId: '1',
   editions: 1,
@@ -138,7 +142,11 @@ const approval = isXtz(src.address)
     });
 
 // approve(s) + swap -> one atomic group; native-XTZ output auto-forwards to your Michelson address
-const ops = freeRoute.buildSwapOperation({ swap, srcAddress: src.address, approval });
+const ops = freeRoute.michelson.buildSwapOperation({
+  swap,
+  srcAddress: src.address,
+  approval,
+});
 const op = await tezos.contract.batch().with(ops).send(); // a single signature
 await op.confirmation();`;
 
@@ -149,12 +157,12 @@ import { FreeRouteClient, tezosXPreviewnet, serializeQuote, serializeSwap } from
 export const freeRoute = new FreeRouteClient({
   baseUrl: process.env.FREE_ROUTE_API!,
   chainId: tezosXPreviewnet.chainId,
-  apiKey: process.env.FREE_ROUTE_API_KEY, // server-only env, never NEXT_PUBLIC
+  apiKey: process.env.FREE_ROUTE_API_KEY!, // server-only env, never NEXT_PUBLIC
 });
 
 // thin proxy endpoints -- each route.ts exports a GET over the keyed client above
 import type { NextRequest } from 'next/server';
-import { parseQuoteQuery, parseSwapQuery } from '@/lib/freeRouteDto'; // app helpers: validate untrusted params
+import { parseQuoteQuery, parseSwapQuery } from '@baking-bad/free-route-tezos-x'; // SDK codec: validate untrusted params
 
 // app/api/free-route/tokens/route.ts -- plain JSON, no bigints, no serialize step
 export async function GET() {
@@ -176,25 +184,24 @@ export async function GET(req: NextRequest) {
   return Response.json(serializeSwap(swap));
 }`;
 
-const CLIENT_CODE = `// lib/sdk.ts -- a keyless client implementing the SDK's FreeRouteApi, via our proxy
+const CLIENT_CODE = `// lib/freeRoute.ts -- a keyless client implementing the SDK's FreeRouteApi, via our proxy
 import {
-  parseQuote, parseSwap,
-  type FreeRouteApi, type FreeRouteToken, type QuoteQuery, type QuoteResponseDto, type SwapResponseDto,
+  parseQuote, parseSwap, serializeQuoteQuery, serializeSwapQuery,
+  type FreeRouteApi, type FreeRouteToken, type QuoteResponseDto, type SwapResponseDto,
 } from '@baking-bad/free-route-tezos-x';
-import { queryToParams } from '@/lib/freeRouteDto'; // app helper: query object -> query string
 
 // same-origin fetch to our proxy endpoints (the key is injected server-side)
-async function get<T>(path: string, query?: QuoteQuery): Promise<T> {
-  const qs = query ? '?' + queryToParams(query) : '';
+async function get<T>(path: string, params?: URLSearchParams): Promise<T> {
+  const qs = params ? '?' + params : '';
   const res = await fetch('/api/free-route/' + path + qs);
   return res.json();
 }
 
-// FreeRouteApi is the SDK's read surface; the SDK parses each wire DTO back into a typed model.
+// FreeRouteApi is the SDK's read surface; serialize the query, parse each wire DTO back into a typed model.
 export const freeRoute: FreeRouteApi = {
   getTokens: () => get<FreeRouteToken[]>('tokens'),
-  getQuote: async (q) => parseQuote(await get<QuoteResponseDto>('quote', q)), // bigints restored
-  getSwap: async (q) => parseSwap(await get<SwapResponseDto>('swap', q)),
+  getQuote: async (q) => parseQuote(await get<QuoteResponseDto>('quote', serializeQuoteQuery(q))), // bigints restored
+  getSwap: async (q) => parseSwap(await get<SwapResponseDto>('swap', serializeSwapQuery(q))),
 };`;
 
 const PAGES: PageDoc[] = [

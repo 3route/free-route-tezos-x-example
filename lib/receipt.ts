@@ -7,8 +7,8 @@
 //   - fulfillAmount       — XTZ the buyer sent to objkt via fulfill_ask (the op value).
 //   - nftOwned            — FA2 ledger now shows the buyer as the token owner (real on-chain check).
 import { CFG } from './config';
-import { isXtz } from './sdk';
-import type { FreeRouteToken } from './sdk';
+import { isXtz } from '@baking-bad/free-route-tezos-x';
+import type { FreeRouteToken } from '@baking-bad/free-route-tezos-x';
 import { fetchErc20Balance, fetchOwner, fetchXtzBalance } from './tzkt';
 
 export interface BuyReceipt {
