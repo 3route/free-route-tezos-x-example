@@ -4,11 +4,26 @@ import { OpKind } from '@taquito/taquito';
 import type { ParamsWithKind, TezosToolkit } from '@taquito/taquito';
 import type { MichelsonV1Expression } from '@taquito/rpc';
 import { CFG } from './config';
-import { XTZ, buildBatchTransaction, buildSwapOperation, fromEvmUnits, isXtz, michelsonToEvmAlias, objkt, resolveApproval, targetForMinOut, freeRoute, toEvmUnits } from './sdk';
-import type { ApprovalMode, FreeRouteToken } from './sdk';
+import {
+  XTZ,
+  buildBatchTransaction,
+  createMichelsonOpsBuilder,
+  fromEvmUnits,
+  isXtz,
+  michelsonToEvmAlias,
+  objkt,
+  resolveApproval,
+  targetForMinOut,
+  toEvmUnits,
+} from '@baking-bad/free-route-tezos-x';
+import type { ApprovalMode, FreeRouteToken } from '@baking-bad/free-route-tezos-x';
+import { freeRoute } from './freeRoute';
 import { fmtUnits } from './format';
 
 const MAX_GAS_PER_BATCH = 2_500_000; // stay safely under the per-op-group ceiling; split if exceeded
+
+// Michelson op builders with our network's call_evm gateway bound in — call .buildSwapOperation without repeating it.
+const michelsonOps = createMichelsonOpsBuilder(CFG.gateway);
 
 const m = {
   string: (s: string): MichelsonV1Expression => ({ string: s }),
@@ -131,8 +146,17 @@ export async function buildBuyBatch(
   });
 
   // approve(s) + swap, composed with the objkt fulfill (paid by the bridged XTZ) -> one atomic group
-  const swapOps = buildSwapOperation({ swap, gateway: CFG.gateway, srcAddress: payToken.address, approval });
-  const fulfillOp = objkt.buildFulfillAsk({ marketplace: CFG.objkt, askId: ask.askId, editions: 1, amountMutez: ask.priceMutez });
+  const swapOps = michelsonOps.buildSwapOperation({
+    swap,
+    srcAddress: payToken.address,
+    approval,
+  });
+  const fulfillOp = objkt.buildMichelsonFulfillAskOperation({
+    marketplace: CFG.objkt,
+    askId: ask.askId,
+    editions: 1,
+    amountMutez: ask.priceMutez,
+  });
   const ops = buildBatchTransaction(swapOps, fulfillOp);
 
   const expectedOutMutez = Number(fromEvmUnits(swap.dstAmount, XTZ.address));
@@ -189,7 +213,7 @@ export async function buildSwapBatch(
   amount: bigint,
   slippageBps: number,
 ): Promise<{ ops: ParamsWithKind[]; details: SwapDetails }> {
-  const alias = michelsonToEvmAlias(account); // EVM identity that runs the swap
+  const accountAlias = michelsonToEvmAlias(account); // EVM identity that runs the swap
 
   // exact-in: any token -> any token (XTZ <-> ERC20, ERC20 <-> ERC20)
   const swapAmount = toEvmUnits(amount, src.address); // to wei for the EVM API
@@ -198,8 +222,8 @@ export async function buildSwapBatch(
     dst: dst.address,
     amount: swapAmount,
     isExactOut: false,
-    from: alias,
-    receiver: alias,
+    from: accountAlias,
+    receiver: accountAlias,
     slippageBps,
   });
 
@@ -209,13 +233,17 @@ export async function buildSwapBatch(
     : await resolveApproval({
         evmRpc: CFG.evmRpc,
         token: src.address,
-        owner: alias,
+        owner: accountAlias,
         spender: swap.tx.to,
         amount: swap.srcAmount,
       });
 
   // approve(s) + swap -> one atomic group; native-XTZ output auto-forwards to your Michelson address
-  const ops = buildSwapOperation({ swap, gateway: CFG.gateway, srcAddress: src.address, approval });
+  const swapOps = michelsonOps.buildSwapOperation({
+    swap,
+    srcAddress: src.address,
+    approval,
+  });
   const payAmount = fromEvmUnits(swap.srcAmount, src.address);
 
   // steps mirror the ACTUAL ops (1 / 2 / 3, depending on the approval mode).
@@ -229,7 +257,7 @@ export async function buildSwapBatch(
   const landing = isXtz(dst.address) ? 'auto-forwards to your Michelson address' : 'received on your EVM alias';
 
   return {
-    ops,
+    ops: swapOps,
     details: {
       src,
       dst,

@@ -1,8 +1,9 @@
 'use client';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { create } from 'zustand';
-import { XTZ_ADDRESS, isXtz, freeRoute, xtzMutezToWei } from './sdk';
-import type { FreeRouteToken } from './sdk';
+import { XTZ_ADDRESS, isXtz, xtzMutezToWei } from '@baking-bad/free-route-tezos-x';
+import type { FreeRouteToken } from '@baking-bad/free-route-tezos-x';
+import { freeRoute } from './freeRoute';
 import { fetchErc20Balance, fetchListings, fetchOwned, fetchXtzBalance, type Listing, type OwnedToken } from './tzkt';
 import { useUi } from './ui';
 import { fmtSig } from './format';

@@ -2,7 +2,7 @@
 import { fmtUnits, mutezToXtz } from '@/lib/format';
 import { nftName } from '@/lib/names';
 import { CFG } from '@/lib/config';
-import type { FreeRouteToken } from '@/lib/sdk';
+import type { FreeRouteToken } from '@baking-bad/free-route-tezos-x';
 import type { BuyReceipt } from '@/lib/receipt';
 
 // signed XTZ display (µtz bigint -> "±N.NNN XTZ")

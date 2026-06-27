@@ -4,7 +4,7 @@ import { TezosToolkit } from '@taquito/taquito';
 import { BeaconWallet } from '@taquito/beacon-wallet';
 import { BeaconEvent, ColorMode } from '@airgap/beacon-dapp';
 import { CFG, NETWORK_NAME } from './config';
-import { michelsonToEvmAlias } from './sdk';
+import { michelsonToEvmAlias } from '@baking-bad/free-route-tezos-x';
 
 interface WalletState {
   connected: boolean;
