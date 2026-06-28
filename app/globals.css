@@ -26,6 +26,15 @@
   ::file-selector-button {
     border-color: var(--color-gray-200, currentcolor);
   }
+
+  /* Tailwind v4 / browsers default <button> to `cursor: default` — make every enabled clickable control a pointer
+     (disabled buttons keep their `disabled:cursor-not-allowed`; <a href> is already pointer by browser default). */
+  button:not(:disabled),
+  select,
+  summary,
+  [role='button'] {
+    cursor: pointer;
+  }
 }
 
 @utility card {
@@ -33,7 +42,7 @@
 }
 
 @utility btn {
-  @apply inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-medium transition disabled:opacity-40 disabled:cursor-not-allowed;
+  @apply inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-medium transition cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed;
 }
 
 @utility btn-primary {
