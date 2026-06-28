@@ -1,5 +1,5 @@
 'use client';
-import { fmtUnits, mutezToXtz } from '@/lib/format';
+import { fmtUnits, mutezToXtz, short } from '@/lib/format';
 import { nftName } from '@/lib/names';
 import { CFG } from '@/lib/config';
 import type { FreeRouteToken } from '@baking-bad/free-route-tezos-x';
@@ -104,7 +104,15 @@ export function ReceiptModal({ receipt: r, token, tokenId, askId, onClose }: { r
             {r.actualChange > 0n && (
               <Check ok={r.changeWithinExpected}>Change returned within the quoted estimate (≤ {xtz(r.expectedChange)})</Check>
             )}
-            <Check ok={r.nftOwned}>NFT now owned by your {r.evm ? 'michelson alias' : 'michelson account'}</Check>
+            <Check ok={r.nftOwned}>
+              {r.recipient ? (
+                <>
+                  NFT now owned by <span className="font-mono">{short(r.recipient, 6)}</span>
+                </>
+              ) : (
+                <>NFT now owned by your {r.evm ? 'michelson alias' : 'michelson account'}</>
+              )}
+            </Check>
           </ul>
         </div>
 

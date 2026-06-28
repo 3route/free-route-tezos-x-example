@@ -1,5 +1,5 @@
 'use client';
-import { fmtUnits } from '@/lib/format';
+import { fmtUnits, short } from '@/lib/format';
 import { isXtz } from '@baking-bad/free-route-tezos-x';
 import { CFG } from '@/lib/config';
 import type { SwapReceipt } from '@/lib/receipt';
@@ -82,7 +82,7 @@ export function SwapReceiptModal({ receipt: r, onClose }: { receipt: SwapReceipt
           <div className="space-y-1.5">
             <Line
               label={`${dst.symbol} received`}
-              sub={r.evm ? 'to evm account' : dstXtz ? 'to michelson account (auto-forward)' : 'to evm alias'}
+              sub={r.recipient ? `to ${short(r.recipient, 6)}` : r.evm ? 'to evm account' : dstXtz ? 'to michelson account (auto-forward)' : 'to evm alias'}
               value={`+${amt(r.dstReceived, dst.decimals, dst.symbol)}`}
               tone="emerald"
             />

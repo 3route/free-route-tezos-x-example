@@ -27,7 +27,7 @@ import {
 import type { ApprovalMode, FreeRouteToken } from '@baking-bad/free-route-tezos-x';
 import { CFG } from './config';
 import { freeRoute } from './freeRoute';
-import { fmtUnits } from './format';
+import { fmtUnits, short } from './format';
 
 const MAX_GAS_PER_BATCH = 2_500_000; // stay safely under the per-op-group ceiling; split if exceeded
 
@@ -147,6 +147,7 @@ export async function buildBuyBatch(
   ask: { askId: string; tokenId: string; priceMutez: number },
   payToken: FreeRouteToken,
   slippageBps: number,
+  recipient?: string | null, // Michelson address the NFT goes to (objkt proxy_for); null/undefined = the buyer (tz1)
 ): Promise<{ ops: ParamsWithKind[]; details: BuyDetails }> {
   const buyerAlias = michelsonToEvmAlias(buyerMichelsonAddress); // the evm alias that holds the ERC20 + runs the swap
 
@@ -181,11 +182,13 @@ export async function buildBuyBatch(
     askId: ask.askId,
     editions: 1,
     amountMutez: ask.priceMutez,
+    recipient,
   });
   const ops = buildBatchTransaction(swapOps, fulfillOp);
 
   const expectedOutMutez = Number(fromEvmUnits(swap.dstAmount, XTZ.address));
   const minOutMutez = Number(fromEvmUnits(swap.dstAmountMin, XTZ.address)); // == price after our sizing
+  const nftTo = recipient ? short(recipient, 6) : 'michelson account'; // where the NFT lands in the notation
 
   const details: BuyDetails = {
     askId: ask.askId,
@@ -203,7 +206,7 @@ export async function buildBuyBatch(
     steps: [
       ...approveSteps(approval, srcAmount, payToken),
       { kind: 'swap', detail: 'call_evm(router.swap()) —XTZ→ michelson account' },
-      { kind: 'fulfill_ask', detail: 'objkt.fulfill_ask() —NFT→ michelson account' },
+      { kind: 'fulfill_ask', detail: `objkt.fulfill_ask() —NFT→ ${nftTo}` },
     ],
   };
   return { ops, details };
@@ -229,8 +232,10 @@ export async function buildSwapBatch(
   dst: FreeRouteToken,
   amount: bigint,
   slippageBps: number,
+  receiver?: string | null, // EVM 0x address the output lands on; null/undefined = the account's evm alias
 ): Promise<{ ops: ParamsWithKind[]; details: SwapDetails }> {
   const accountAlias = michelsonToEvmAlias(account); // the evm alias that runs the swap
+  const out = receiver ?? accountAlias;
 
   // exact-in: any token -> any token (XTZ <-> ERC20, ERC20 <-> ERC20)
   const swapAmount = toEvmUnits(amount, src.address); // to wei for the EVM API
@@ -240,7 +245,7 @@ export async function buildSwapBatch(
     amount: swapAmount,
     isExactOut: false,
     from: accountAlias,
-    receiver: accountAlias,
+    receiver: out,
     slippageBps,
   });
 
@@ -265,7 +270,7 @@ export async function buildSwapBatch(
       router: swap.tx.to,
       approval,
       // mirrors the ACTUAL ops (1 / 2 / 3, by approval mode); the swap output lands on the dst token's holder.
-      steps: [...approveSteps(approval, payAmount, src), { kind: 'swap', detail: `call_evm(router.swap()) —${dst.symbol}→ ${holderOf(dst)}` }],
+      steps: [...approveSteps(approval, payAmount, src), { kind: 'swap', detail: `call_evm(router.swap()) —${dst.symbol}→ ${receiver ? short(receiver, 6) : holderOf(dst)}` }],
     },
   };
 }

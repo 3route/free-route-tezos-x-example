@@ -1,5 +1,5 @@
 'use client';
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import type { ParamsWithKind } from '@taquito/taquito';
 import { useWallet } from '@/lib/wallet';
@@ -28,6 +28,15 @@ const SLIPPAGES = [
 ];
 const MIN_SLIPPAGE_BPS = 0; // 0% — zero tolerance is allowed (warned as very low)
 const MAX_SLIPPAGE_BPS = 4900; // 49%
+
+// Validate the recipient Michelson address (tz1/2/3 or KT1) for the "send to another address" option — the NFT
+// is a Michelson-side asset (objkt proxy_for). Empty → a required error. Returns the address + a validation error.
+function resolveRecipient(input: string): { recipient: string | null; error: string | null } {
+  const v = input.trim();
+  if (!v) return { recipient: null, error: 'Enter a recipient address' };
+  if (/^(tz[1-4]|KT1)[1-9A-HJ-NP-Za-km-z]{33}$/.test(v)) return { recipient: v, error: null };
+  return { recipient: null, error: 'Enter a valid tz1 / KT1 Michelson address' };
+}
 
 export function BuyModal({ listing, onClose }: { listing: Listing; onClose: () => void }) {
   const { tezos, michelsonAddress, aliasAddress } = useWallet(); // Temple path (Michelson signing + receipt)
@@ -59,8 +68,17 @@ export function BuyModal({ listing, onClose }: { listing: Listing; onClose: () =
   const [signingIndex, setSigningIndex] = useState<number | null>(null); // MetaMask sequential: which call is being signed
   const [err, setErr] = useState<string | null>(null);
   const [quotedAt, setQuotedAt] = useState<number | null>(null); // last successful quote (for the 30s countdown)
+  const [recipientMode, setRecipientMode] = useState<'me' | 'other'>('me'); // who gets the NFT
+  const [recipientInput, setRecipientInput] = useState(''); // address used only in 'other' mode (objkt proxy_for)
 
   const priceMutez = Number(listing.priceMutez);
+  // 'me' → null (default self, no error). 'other' → the validated address, with a required/invalid error.
+  const { recipient: resolvedRecipient, error: recipientError } = useMemo(
+    () => (recipientMode === 'me' ? { recipient: null, error: null } : resolveRecipient(recipientInput)),
+    [recipientMode, recipientInput],
+  );
+  // a custom recipient equal to our own default NFT owner is just "to me" — drop it so the notation/receipt read as self
+  const effectiveRecipient = resolvedRecipient && resolvedRecipient !== aw.michelsonOwner ? resolvedRecipient : null;
 
   // EVM address that runs the swap & pays: the connected 0x (MetaMask) or the Michelson account's alias (Temple).
   const payer = aw.kind === 'metamask' ? aw.evm.evmAddress : michelsonAddress;
@@ -77,8 +95,8 @@ export function BuyModal({ listing, onClose }: { listing: Listing; onClose: () =
       const ask = { askId: listing.askId, tokenId: listing.tokenId, priceMutez };
       const job =
         aw.kind === 'metamask'
-          ? buildEvmBuyBatch(payer, ask, token, slippageBps).then(({ txs, details: d }) => ({ b: { kind: 'metamask' as const, txs }, d }))
-          : buildBuyBatch(payer, ask, token, slippageBps).then(({ ops, details: d }) => ({ b: { kind: 'temple' as const, ops }, d }));
+          ? buildEvmBuyBatch(payer, ask, token, slippageBps, effectiveRecipient).then(({ txs, details: d }) => ({ b: { kind: 'metamask' as const, txs }, d }))
+          : buildBuyBatch(payer, ask, token, slippageBps, effectiveRecipient).then(({ ops, details: d }) => ({ b: { kind: 'temple' as const, ops }, d }));
       job
         .then(({ b, d }) => {
           if (!cancelled) {
@@ -102,7 +120,7 @@ export function BuyModal({ listing, onClose }: { listing: Listing; onClose: () =
       clearInterval(id);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [payer, aw.kind, token, slippageBps, listing, priceMutez]);
+  }, [payer, aw.kind, token, slippageBps, listing, priceMutez, effectiveRecipient]);
 
   // 1s tick for the "updating in Ns" countdown to the next 30s re-quote
   const [now, setNow] = useState(() => Date.now());
@@ -147,6 +165,7 @@ export function BuyModal({ listing, onClose }: { listing: Listing; onClose: () =
             quotedSrcAmount: BigInt(details.payAmount),
             expectedChange: BigInt(details.changeMutez),
             fulfillMutez: BigInt(priceMutez),
+            recipient: effectiveRecipient,
             before: { xtz: xtz0, usdc: usdc0 },
           });
           addBuy(r, token, listing.tokenId, listing.askId);
@@ -173,6 +192,7 @@ export function BuyModal({ listing, onClose }: { listing: Listing; onClose: () =
           tokenId: listing.tokenId,
           quotedSrcAmount: BigInt(details.payAmount),
           expectedChange: BigInt(details.changeMutez),
+          recipient: effectiveRecipient,
           before: { xtz: xtz0, usdc: usdc0 },
         });
         addBuy(r, token, listing.tokenId, listing.askId); // record in the activity log
@@ -195,7 +215,13 @@ export function BuyModal({ listing, onClose }: { listing: Listing; onClose: () =
     return (
       <SubmittedModal
         title="Purchase submitted"
-        note={done.evm ? 'Confirmed on-chain. The NFT landed on your michelson alias — see Owned.' : 'Confirmed on-chain. The measured receipt wasn’t ready yet (indexer lag) — see Owned.'}
+        note={
+          effectiveRecipient
+            ? `Confirmed on-chain. The NFT was sent to ${short(effectiveRecipient, 6)}.`
+            : done.evm
+              ? 'Confirmed on-chain. The NFT landed on your michelson alias — see Owned.'
+              : 'Confirmed on-chain. The measured receipt wasn’t ready yet (indexer lag) — see Owned.'
+        }
         hashes={done.hashes}
         evm={done.evm}
         onClose={onClose}
@@ -206,8 +232,8 @@ export function BuyModal({ listing, onClose }: { listing: Listing; onClose: () =
     <div className="fixed inset-0 z-30 grid place-items-center bg-black/60 p-4" onClick={onClose}>
       <div className="card max-h-[90vh] w-full max-w-lg overflow-y-auto" onClick={(e) => e.stopPropagation()}>
         {/* header */}
-        <div className="mb-4 flex items-center gap-3">
-          <NftArt tokenId={listing.tokenId} className="h-14 w-14 shrink-0 rounded-xl" />
+        <div className="mb-3 flex items-center gap-3">
+          <NftArt tokenId={listing.tokenId} className="h-12 w-12 shrink-0 rounded-xl" />
           <div className="min-w-0">
             <div className="font-semibold">{nftName(listing.tokenId)}</div>
             <div className="font-mono text-[11px] text-slate-500">ask {listing.askId}</div>
@@ -219,7 +245,7 @@ export function BuyModal({ listing, onClose }: { listing: Listing; onClose: () =
         </div>
 
         {/* pay token — compact chips, like the listing switcher */}
-        <div className="mb-4 flex flex-wrap items-center gap-2">
+        <div className="mb-3 flex flex-wrap items-center gap-2">
           <span className="label">Pay with</span>
           {payTokens.map((t) => (
             <button
@@ -233,7 +259,7 @@ export function BuyModal({ listing, onClose }: { listing: Listing; onClose: () =
         </div>
 
         {/* slippage */}
-        <div className="mb-4">
+        <div className="mb-3">
           <div className="flex flex-wrap items-center gap-2">
             <span className="label">Slippage</span>
             {SLIPPAGES.map((s) => (
@@ -289,67 +315,104 @@ export function BuyModal({ listing, onClose }: { listing: Listing; onClose: () =
               <div className="grid h-60 place-items-center text-center text-xs text-rose-400">{err}</div>
             )}
             {details && token && (
-            <div className={`space-y-3 transition-opacity ${quoting ? 'opacity-40' : 'opacity-100'}`}>
-              {/* pay token — the ERC20 you spend (on the evm account / evm alias) */}
+            <div className={`space-y-2.5 transition-opacity ${quoting ? 'opacity-40' : 'opacity-100'}`}>
+              {/* swap summary — the ERC20 you spend (evm account / evm alias) and the native-XTZ leg that funds the
+                  ask; the NFT lands on the michelson alias. Both legs in one box to keep the modal compact. */}
               <div className="rounded-lg border border-edge p-2.5">
-                <div className="label mb-1.5">pay token</div>
-                <div className="flex items-start justify-between">
-                  <span className="text-slate-400">
-                    You pay <span className="text-[10px] uppercase tracking-wide text-slate-600">exact</span>
-                  </span>
-                  <span className="text-right font-mono">
-                    <span className="block">{fmtUnits(details.payAmount, token.decimals, token.decimals)} {token.symbol}</span>
-                    <span className="block text-[11px] text-slate-600">{payFrom}</span>
-                  </span>
-                </div>
-              </div>
-
-              {/* native-XTZ leg: on the michelson account (Temple) or the evm account (MetaMask); the NFT lands on the michelson alias */}
-              <div className="rounded-lg border border-edge p-2.5">
-                <div className="label mb-1.5">native XTZ</div>
                 <div className="divide-y divide-edge">
                   <div className="flex items-start justify-between pb-2">
+                    <span className="text-slate-400">
+                      You pay <span className="text-[10px] uppercase tracking-wide text-slate-600">exact</span>
+                    </span>
+                    <span className="text-right font-mono">
+                      <span className="block">{fmtUnits(details.payAmount, token.decimals, token.decimals)} {token.symbol}</span>
+                      <span className="block text-[11px] text-slate-600">{payFrom}</span>
+                    </span>
+                  </div>
+                  <div className="flex items-start justify-between py-2">
                     <span className="text-slate-400">You receive</span>
                     <span className="text-right font-mono">
-                      <span className="block">
-                        ≈ {mutezToXtz(details.expectedOutMutez, 6)} XTZ{' '}
-                        <span className="text-[10px] uppercase tracking-wide text-slate-600">expected</span>
-                      </span>
+                      <span className="block">≈ {mutezToXtz(details.expectedOutMutez, 6)} XTZ</span>
                       <span className="block text-xs text-slate-500">≥ {mutezToXtz(details.minOutMutez, 6)} XTZ guaranteed</span>
                       <span className="block text-[11px] text-slate-600">{xtzTo}</span>
                     </span>
                   </div>
-                  <div className="flex items-center justify-between py-2">
+                  {/* the received XTZ pays the ask price; the surplus is kept as change */}
+                  <div className="flex items-center justify-between pt-2">
                     <span className="text-slate-400">NFT price</span>
-                    <span className="font-mono">{mutezToXtz(priceMutez, 6)} XTZ</span>
-                  </div>
-                  <div className="flex items-start justify-between pt-2">
-                    <span className="text-slate-400">Change</span>
-                    <span className="text-right font-mono">
-                      <span className="block">
-                        ≈ {mutezToXtz(details.changeMutez, 6)} XTZ{' '}
-                        <span className="text-[10px] uppercase tracking-wide text-slate-600">expected</span>
-                      </span>
-                      <span className="block text-[11px] text-slate-600">{xtzTo}</span>
+                    <span className="font-mono">
+                      {mutezToXtz(priceMutez, 6)} XTZ
+                      <span className="text-slate-500"> · keep ≈ {mutezToXtz(details.changeMutez, 6)} change</span>
                     </span>
                   </div>
                 </div>
               </div>
 
+              {/* recipient — who gets the NFT: yourself (default) or another Michelson address (objkt proxy_for) */}
+              <div className="rounded-lg border border-edge p-2.5">
+                <div className="flex items-center gap-2">
+                  <span className="label">Recipient</span>
+                  <button
+                    type="button"
+                    onClick={() => setRecipientMode('me')}
+                    className={`chip ${recipientMode === 'me' ? 'border-accent text-accent' : ''}`}
+                  >
+                    To me
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setRecipientMode('other')}
+                    className={`chip ${recipientMode === 'other' ? 'border-accent text-accent' : ''}`}
+                  >
+                    Another address
+                  </button>
+                </div>
+                {recipientMode === 'me' ? (
+                  <p className="mt-1.5 text-[11px] text-slate-600">
+                    NFT goes to your {aw.kind === 'metamask' ? 'michelson alias' : 'michelson account'}
+                    {aw.michelsonOwner && <span className="ml-1 font-mono text-slate-500">{short(aw.michelsonOwner, 8)}</span>}.
+                  </p>
+                ) : (
+                  <>
+                    <input
+                      className={`input mt-2 font-mono text-xs ${recipientError ? 'border-rose-400/60' : ''}`}
+                      placeholder="tz1… / KT1… Michelson address"
+                      value={recipientInput}
+                      onChange={(e) => setRecipientInput(e.target.value)}
+                      spellCheck={false}
+                      autoFocus
+                    />
+                    <p className="mt-1.5 text-[11px] text-slate-600">
+                      {recipientError ? (
+                        <span className="text-rose-400">{recipientError}</span>
+                      ) : !effectiveRecipient ? (
+                        // a valid address that equals our own default owner → collapses to "To me"
+                        <span>That’s your {aw.kind === 'metamask' ? 'michelson alias' : 'michelson account'} — same as “To me”.</span>
+                      ) : (
+                        <span>
+                          NFT → <span className="font-mono text-slate-400">{short(effectiveRecipient, 8)}</span>
+                        </span>
+                      )}
+                    </p>
+                  </>
+                )}
+              </div>
+
               {/* steps — FROM → operation → TO notation */}
               <div className="rounded-lg border border-edge p-2.5">
-                <div className="label mb-1">
-                  {aw.kind !== 'metamask'
-                    ? 'One signature · atomic op-group'
-                    : aw.evm.atomicBatch
-                      ? '1 signature · atomic batch'
-                      : `${details.steps.length} signature${details.steps.length > 1 ? 's' : ''} · sign one by one`}
-                </div>
-                <div className="mb-2 text-[11px] text-slate-500">
-                  Signed by{' '}
-                  {aw.kind === 'metamask'
-                    ? `evm account · ${short(aw.evm.evmAddress ?? '')}`
-                    : `michelson account · ${short(michelsonAddress ?? '')}`}
+                <div className="mb-2 flex items-baseline justify-between gap-2">
+                  <span className="label">
+                    {aw.kind !== 'metamask'
+                      ? 'One signature · atomic op-group'
+                      : aw.evm.atomicBatch
+                        ? '1 signature · atomic batch'
+                        : `${details.steps.length} signature${details.steps.length > 1 ? 's' : ''} · sign one by one`}
+                  </span>
+                  <span className="shrink-0 text-[11px] text-slate-500">
+                    {aw.kind === 'metamask'
+                      ? `evm account · ${short(aw.evm.evmAddress ?? '')}`
+                      : `michelson account · ${short(michelsonAddress ?? '')}`}
+                  </span>
                 </div>
                 <ol className="space-y-1 text-xs text-slate-400">
                   {details.steps.map((s, i) => (
@@ -385,11 +448,11 @@ export function BuyModal({ listing, onClose }: { listing: Listing; onClose: () =
         {err && details && <p className="mt-3 text-xs text-rose-400">{err}</p>}
 
         {/* actions */}
-        <div className="mt-4 flex items-center justify-end gap-2">
+        <div className="mt-3 flex items-center justify-end gap-2">
           <button className="btn-ghost" onClick={onClose} disabled={buying}>
             Cancel
           </button>
-          <button className="btn-primary" onClick={() => void confirm()} disabled={!built || buying || quoting || !enough}>
+          <button className="btn-primary" onClick={() => void confirm()} disabled={!built || buying || quoting || !enough || !!recipientError}>
             {buying
               ? finalizing
                 ? 'Finalizing…'

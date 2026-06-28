@@ -41,7 +41,8 @@ export interface BuyReceipt {
   // checks (real, on-chain)
   paidAsQuoted: boolean; // usdcSpent === quoted srcAmount
   changeWithinExpected: boolean; // actualChange <= expectedChange (didn't over-fund beyond the quote)
-  nftOwned: boolean; // FA2 ledger: token now owned by the buyer
+  nftOwned: boolean; // FA2 ledger: token now owned by the expected recipient (buyer by default)
+  recipient?: string; // set only when the NFT was directed elsewhere (objkt proxy_for) — for the receipt's owner line
   evm?: boolean; // true = MetaMask path (opHash is an EVM tx; link to blockscout). Default false = Michelson op (tzkt).
   txs?: { label: string; hash: string }[]; // EVM sequential path: every tx (approve / swap / fulfill) with its step label
 }
@@ -74,9 +75,11 @@ export async function buildBuyReceipt(params: {
   tokenId: string; // FA2 token id, for the ownership check
   quotedSrcAmount: bigint; // BuyDetails.payAmount
   expectedChange: bigint; // BuyDetails.changeMutez
+  recipient?: string | null; // where the NFT was directed (objkt proxy_for); null = the buyer
   before: { xtz: bigint; usdc: bigint };
 }): Promise<BuyReceipt> {
   const items = await fetchOpGroup(params.opHash, (o) => o.some((x) => x.parameter?.entrypoint === 'fulfill_ask'));
+  const nftOwner = params.recipient ?? params.buyer; // who should own the NFT after the buy
 
   // value the buyer sent to the marketplace (fulfill_ask carries the XTZ price).
   const fulfillAmount = BigInt(items.find((o) => o.parameter?.entrypoint === 'fulfill_ask')?.amount ?? 0);
@@ -92,11 +95,11 @@ export async function buildBuyReceipt(params: {
   const usdcSpent = params.before.usdc - usdcAfter;
   const xtzNet = xtzAfter - params.before.xtz;
 
-  // ownership — poll the FA2 ledger (indexer lag) until the buyer shows as owner.
+  // ownership — poll the FA2 ledger (indexer lag) until the recipient shows as owner.
   let owner: string | null = null;
   for (let i = 0; i < 5; i++) {
     owner = await fetchOwner(params.tokenId);
-    if (owner === params.buyer) break;
+    if (owner === nftOwner) break;
     await sleep(1500);
   }
 
@@ -114,7 +117,8 @@ export async function buildBuyReceipt(params: {
     fulfillAmount,
     paidAsQuoted: usdcSpent === params.quotedSrcAmount,
     changeWithinExpected: xtzNet + networkFee <= params.expectedChange,
-    nftOwned: owner === params.buyer,
+    nftOwned: owner === nftOwner,
+    recipient: params.recipient ?? undefined,
   };
 }
 
@@ -131,8 +135,10 @@ export async function buildEvmBuyReceipt(params: {
   quotedSrcAmount: bigint; // BuyDetails.payAmount
   expectedChange: bigint; // BuyDetails.changeMutez
   fulfillMutez: bigint; // XTZ sent to objkt (the ask price)
+  recipient?: string | null; // where the NFT was directed (objkt proxy_for); null = the account's KT1 alias
   before: { xtz: bigint; usdc: bigint }; // EVM-account native XTZ in WEI + pay-token (base units)
 }): Promise<BuyReceipt> {
+  const nftOwner = params.recipient ?? params.nftAlias; // who should own the NFT after the buy
   const [xtzAfterWei, usdcAfter, feeWei] = await Promise.all([
     fetchEvmXtzBalanceWei(params.account),
     fetchErc20Balance(params.payTokenAddress, params.account),
@@ -146,11 +152,11 @@ export async function buildEvmBuyReceipt(params: {
   const xtzNet = weiToMutez(xtzAfterWei - params.before.xtz);
   const actualChange = weiToMutez(xtzAfterWei - params.before.xtz + feeWei); // = xtzNet + fee, isolated in wei
 
-  // ownership — the NFT lands on the KT1 alias; poll the FA2 ledger (indexer lag) until it shows.
+  // ownership — the NFT lands on the recipient (KT1 alias by default); poll the FA2 ledger until it shows.
   let owner: string | null = null;
   for (let i = 0; i < 5; i++) {
     owner = await fetchOwner(params.tokenId);
-    if (owner === params.nftAlias) break;
+    if (owner === nftOwner) break;
     await sleep(1500);
   }
 
@@ -168,7 +174,8 @@ export async function buildEvmBuyReceipt(params: {
     fulfillAmount: params.fulfillMutez,
     paidAsQuoted: usdcSpent === params.quotedSrcAmount,
     changeWithinExpected: actualChange <= params.expectedChange,
-    nftOwned: owner === params.nftAlias,
+    nftOwned: owner === nftOwner,
+    recipient: params.recipient ?? undefined,
     evm: true,
     txs: labelEvmTxs(params.hashes, params.stepLabels),
   };
@@ -194,6 +201,7 @@ export interface SwapReceipt {
   receivedAtLeastMin: boolean; // dstReceived >= minOut
   evm?: boolean; // true = MetaMask path (opHash is an EVM tx; link to blockscout). Default false = Michelson op (tzkt).
   txs?: { label: string; hash: string }[]; // EVM sequential path: every tx (approve / swap / …) with its step label
+  recipient?: string; // when set, the output was directed to this 0x address instead of the signer's own holder
 }
 
 export async function buildSwapReceipt(params: {
@@ -205,22 +213,35 @@ export async function buildSwapReceipt(params: {
   quotedPay: bigint;
   minOut: bigint;
   before: { xtz: bigint; src: bigint; dst: bigint }; // src/dst = that token's balance at snapshot (consumer units)
+  dstReceiver?: { address: string; before: bigint } | null; // when set, dst landed on this 0x (EVM side), not the alias
 }): Promise<SwapReceipt> {
   const items = await fetchOpGroup(params.opHash, (o) => o.some((x) => x.parameter?.entrypoint === 'call_evm'));
   const networkFee = items.reduce((s, o) => s + BigInt(o.bakerFee ?? 0) + BigInt(o.storageFee ?? 0) + BigInt(o.allocationFee ?? 0), 0n);
 
   const srcXtz = isXtz(params.src.address);
   const dstXtz = isXtz(params.dst.address);
-  const [xtzAfter, ercSrcAfter, ercDstAfter] = await Promise.all([
+  const recv = params.dstReceiver;
+  const [xtzAfter, ercSrcAfter, ercDstAfter, recvDstAfter] = await Promise.all([
     fetchXtzBalance(params.account),
     srcXtz ? Promise.resolve(0n) : fetchErc20Balance(params.src.address, params.aliasAddress),
     dstXtz ? Promise.resolve(0n) : fetchErc20Balance(params.dst.address, params.aliasAddress),
+    recv ? (dstXtz ? fetchEvmXtzBalanceWei(recv.address) : fetchErc20Balance(params.dst.address, recv.address)) : Promise.resolve(0n),
   ]);
 
   const srcAfter = srcXtz ? xtzAfter : ercSrcAfter;
-  const dstAfter = dstXtz ? xtzAfter : ercDstAfter;
   const srcSpent = srcXtz ? params.before.xtz - xtzAfter - networkFee : params.before.src - srcAfter;
-  const dstReceived = dstXtz ? xtzAfter - params.before.xtz + networkFee : dstAfter - params.before.dst;
+
+  // dst is measured wherever it landed: a custom 0x receiver (EVM side, no gas to add back) or the signer's holder.
+  // for XTZ subtract in WEI then convert once (floor-then-subtract leaks ±1 mutez — same bug as the buy receipt).
+  const dstBefore = recv ? (dstXtz ? weiToMutez(recv.before) : recv.before) : params.before.dst;
+  const dstAfter = recv ? (dstXtz ? weiToMutez(recvDstAfter) : recvDstAfter) : dstXtz ? xtzAfter : ercDstAfter;
+  const dstReceived = recv
+    ? dstXtz
+      ? weiToMutez(recvDstAfter - recv.before)
+      : recvDstAfter - recv.before
+    : dstXtz
+      ? xtzAfter - params.before.xtz + networkFee
+      : dstAfter - params.before.dst;
 
   return {
     opHash: params.opHash,
@@ -231,12 +252,13 @@ export async function buildSwapReceipt(params: {
     networkFee,
     srcBefore: params.before.src,
     srcAfter,
-    dstBefore: params.before.dst,
+    dstBefore,
     dstAfter,
     quotedPay: params.quotedPay,
     minOut: params.minOut,
     paidAsQuoted: srcSpent === params.quotedPay,
     receivedAtLeastMin: dstReceived >= params.minOut,
+    recipient: recv?.address,
   };
 }
 
@@ -252,25 +274,37 @@ export async function buildEvmSwapReceipt(params: {
   quotedPay: bigint;
   minOut: bigint;
   before: { native: bigint; src: bigint; dst: bigint }; // native in WEI; src/dst = that token's balance (0 if XTZ)
+  dstReceiver?: { address: string; before: bigint } | null; // when set, dst landed on this 0x, not the account
 }): Promise<SwapReceipt> {
   const srcXtz = isXtz(params.src.address);
   const dstXtz = isXtz(params.dst.address);
-  const [nativeAfterWei, ercSrcAfter, ercDstAfter, feeWei] = await Promise.all([
+  const recv = params.dstReceiver;
+  const [nativeAfterWei, ercSrcAfter, ercDstAfter, feeWei, recvDstAfter] = await Promise.all([
     fetchEvmXtzBalanceWei(params.account),
     srcXtz ? Promise.resolve(0n) : fetchErc20Balance(params.src.address, params.account),
     dstXtz ? Promise.resolve(0n) : fetchErc20Balance(params.dst.address, params.account),
     fetchEvmTxFeeWei(params.hashes),
+    recv ? (dstXtz ? fetchEvmXtzBalanceWei(recv.address) : fetchErc20Balance(params.dst.address, recv.address)) : Promise.resolve(0n),
   ]);
   const networkFee = weiToMutez(feeWei);
 
   // The native-XTZ side is computed in wei and converted once (see weiToMutez) — the account pays gas in XTZ, so
   // we add the fee back to isolate the swap amount. ERC20 sides are already exact base units (no wei flooring).
   const srcBefore = srcXtz ? weiToMutez(params.before.native) : params.before.src;
-  const dstBefore = dstXtz ? weiToMutez(params.before.native) : params.before.dst;
   const srcAfter = srcXtz ? weiToMutez(nativeAfterWei) : ercSrcAfter;
-  const dstAfter = dstXtz ? weiToMutez(nativeAfterWei) : ercDstAfter;
   const srcSpent = srcXtz ? weiToMutez(params.before.native - nativeAfterWei - feeWei) : params.before.src - ercSrcAfter;
-  const dstReceived = dstXtz ? weiToMutez(nativeAfterWei - params.before.native + feeWei) : ercDstAfter - params.before.dst;
+
+  // dst is measured wherever it landed: a custom 0x receiver (pays no gas → no fee add-back) or the account itself.
+  // for XTZ subtract in WEI then convert once (floor-then-subtract leaks ±1 mutez — same bug as the buy receipt).
+  const dstBefore = recv ? (dstXtz ? weiToMutez(recv.before) : recv.before) : dstXtz ? weiToMutez(params.before.native) : params.before.dst;
+  const dstAfter = recv ? (dstXtz ? weiToMutez(recvDstAfter) : recvDstAfter) : dstXtz ? weiToMutez(nativeAfterWei) : ercDstAfter;
+  const dstReceived = recv
+    ? dstXtz
+      ? weiToMutez(recvDstAfter - recv.before)
+      : recvDstAfter - recv.before
+    : dstXtz
+      ? weiToMutez(nativeAfterWei - params.before.native + feeWei)
+      : ercDstAfter - params.before.dst;
 
   return {
     opHash: params.hashes[params.hashes.length - 1],
@@ -289,6 +323,7 @@ export async function buildEvmSwapReceipt(params: {
     receivedAtLeastMin: dstReceived >= params.minOut,
     evm: true,
     txs: labelEvmTxs(params.hashes, params.stepLabels),
+    recipient: recv?.address,
   };
 }
 

@@ -6,6 +6,7 @@ import { nftName } from '@/lib/names';
 import { ReceiptModal } from './ReceiptModal';
 import { SwapReceiptModal } from './SwapReceiptModal';
 import { MintReceiptModal } from './MintReceiptModal';
+import { Portal } from './Portal';
 
 // dot color per kind: buy=accent, swap=accent2, mint=amber
 const dotColor = (kind: HistoryEntry['kind']) => (kind === 'buy' ? 'bg-accent' : kind === 'swap' ? 'bg-accent2' : 'bg-amber-400');
@@ -60,10 +61,13 @@ export function LogPanel() {
         </div>
       </div>
 
-      {/* modals live OUTSIDE the .card — its backdrop-blur-sm creates a containing block that would trap fixed overlays */}
-      {sel?.kind === 'buy' && <ReceiptModal receipt={sel.receipt} token={sel.token} tokenId={sel.tokenId} askId={sel.askId} onClose={() => setSel(null)} />}
-      {sel?.kind === 'swap' && <SwapReceiptModal receipt={sel.receipt} onClose={() => setSel(null)} />}
-      {sel?.kind === 'mint' && <MintReceiptModal receipt={sel.receipt} onClose={() => setSel(null)} />}
+      {/* modals are portalled to <body> — LogPanel lives inside the sticky <aside>, whose stacking context would
+          otherwise trap these fixed overlays beneath the sticky Header regardless of z-index */}
+      <Portal>
+        {sel?.kind === 'buy' && <ReceiptModal receipt={sel.receipt} token={sel.token} tokenId={sel.tokenId} askId={sel.askId} onClose={() => setSel(null)} />}
+        {sel?.kind === 'swap' && <SwapReceiptModal receipt={sel.receipt} onClose={() => setSel(null)} />}
+        {sel?.kind === 'mint' && <MintReceiptModal receipt={sel.receipt} onClose={() => setSel(null)} />}
+      </Portal>
     </>
   );
 }

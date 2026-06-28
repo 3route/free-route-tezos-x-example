@@ -58,19 +58,28 @@ export const useWallet = create<WalletState>((set, get) => {
     return wallet;
   };
 
-  // Beacon's requestPermissions can hang (never reject) when the user closes the pairing/permission window —
-  // unlike MetaMask, which rejects (4001). There's no clean cross-package way to hook the alert's close without
-  // re-rendering it via @airgap's beacon-ui (which would drop the @ecadlabs dark theme), so as a safety we watch
-  // for focus returning to the dApp while a request is still pending and drop `connecting` then (a late success
-  // still binds normally). Returns a cleanup that removes the listener.
+  // Beacon's requestPermissions can hang (never reject) when the user closes the pairing/permission alert — unlike
+  // MetaMask, which rejects (4001). beacon-ui keeps ONE persistent <beacon-alert> host (open shadow root) and merely
+  // shows/hides its content via React state, so closing the alert removes no DOM node and emits no event. We poll the
+  // shadow root: once the alert's wrapper has shown (.alert-wrapper-show = fadeIn) and then left that state (user
+  // dismissed it), we drop the stuck `connecting`. The short delay lets a real success/rejection land first (on
+  // success the alert also closes, but bind() sets connected). Returns a cleanup that stops the poll.
   const guardStuckConnecting = (): (() => void) => {
     if (typeof window === 'undefined') return () => undefined;
-    const onFocus = () =>
-      setTimeout(() => {
-        if (get().connecting && !get().connected) set({ connecting: false });
-      }, 800); // let a real success/rejection land first
-    window.addEventListener('focus', onFocus);
-    return () => window.removeEventListener('focus', onFocus);
+    const alertOpen = () => !!document.querySelector('beacon-alert')?.shadowRoot?.querySelector('.alert-wrapper-show, .alert-modal-show');
+    let sawOpen = false;
+    const id = window.setInterval(() => {
+      if (!get().connecting || get().connected) return; // already settled elsewhere
+      if (alertOpen()) {
+        sawOpen = true;
+        return;
+      }
+      if (sawOpen) {
+        sawOpen = false;
+        setTimeout(() => get().connecting && !get().connected && set({ connecting: false }), 600);
+      }
+    }, 350);
+    return () => window.clearInterval(id);
   };
 
   return {

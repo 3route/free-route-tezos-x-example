@@ -26,7 +26,7 @@ import {
 import type { ApprovalMode, EvmTxRequest, FreeRouteToken } from '@baking-bad/free-route-tezos-x';
 import { CFG } from './config';
 import { freeRoute } from './freeRoute';
-import { fmtUnits } from './format';
+import { fmtUnits, short } from './format';
 import type { BuyDetails, SellerItem, Step, SwapDetails } from './opsMichelson';
 
 // approve step(s) for the chosen ApprovalMode, as native EVM txs on the evm account (no gateway).
@@ -43,6 +43,7 @@ export async function buildEvmBuyBatch(
   ask: { askId: string; tokenId: string; priceMutez: number },
   payToken: FreeRouteToken,
   slippageBps: number,
+  recipient?: string | null, // Michelson address the NFT goes to (objkt proxy_for); null/undefined = the buyer's KT1 alias
 ): Promise<{ txs: EvmTxRequest[]; details: BuyDetails }> {
   // exact-out: size the XTZ out so the on-chain floor still covers the ask price
   const minOutTarget = targetForMinOut(BigInt(ask.priceMutez), slippageBps);
@@ -59,10 +60,11 @@ export async function buildEvmBuyBatch(
 
   const approval = await resolveApproval({ evmRpc: CFG.evmRpc, token: payToken.address, owner: evmAddress, spender: swap.tx.to, amount: srcAmount });
   const swapTxs = buildEvmSwapTransaction({ swap, srcAddress: payToken.address, approval });
-  const fulfillTx = objkt.buildEvmFulfillAskTransaction({ marketplace: CFG.objkt, askId: ask.askId, editions: 1, amountMutez: ask.priceMutez });
+  const fulfillTx = objkt.buildEvmFulfillAskTransaction({ marketplace: CFG.objkt, askId: ask.askId, editions: 1, amountMutez: ask.priceMutez, recipient });
 
   const expectedOutMutez = Number(fromEvmUnits(swap.dstAmount, XTZ.address));
   const minOutMutez = Number(fromEvmUnits(swap.dstAmountMin, XTZ.address));
+  const nftTo = recipient ? short(recipient, 6) : 'michelson alias'; // where the NFT lands in the notation
 
   const details: BuyDetails = {
     askId: ask.askId,
@@ -78,7 +80,7 @@ export async function buildEvmBuyBatch(
     steps: [
       ...approveSteps(approval, srcAmount, payToken),
       { kind: 'swap', detail: 'router.swap() —XTZ→ evm account' },
-      { kind: 'fulfill_ask', detail: 'callMichelson(fulfill_ask()) —NFT→ michelson alias' },
+      { kind: 'fulfill_ask', detail: `callMichelson(fulfill_ask()) —NFT→ ${nftTo}` },
     ],
   };
   return { txs: [...swapTxs, fulfillTx], details };
@@ -91,14 +93,16 @@ export async function buildEvmSwapBatch(
   dst: FreeRouteToken,
   amount: bigint,
   slippageBps: number,
+  receiver?: string | null, // EVM 0x address the output lands on; null/undefined = the evm account itself
 ): Promise<{ txs: EvmTxRequest[]; details: SwapDetails }> {
+  const out = receiver ?? evmAddress;
   const swap = await freeRoute.getSwap({
     src: src.address,
     dst: dst.address,
     amount: toEvmUnits(amount, src.address),
     isExactOut: false,
     from: evmAddress,
-    receiver: evmAddress,
+    receiver: out,
     slippageBps,
   });
 
@@ -118,7 +122,7 @@ export async function buildEvmSwapBatch(
     slippageBps,
     router: swap.tx.to,
     approval,
-    steps: [...approveSteps(approval, swap.srcAmount, src), { kind: 'swap', detail: `router.swap() —${dst.symbol}→ evm account` }],
+    steps: [...approveSteps(approval, swap.srcAmount, src), { kind: 'swap', detail: `router.swap() —${dst.symbol}→ ${receiver ? short(receiver, 6) : 'evm account'}` }],
   };
   return { txs, details };
 }

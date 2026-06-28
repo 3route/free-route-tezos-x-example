@@ -1,5 +1,5 @@
 'use client';
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import type { ParamsWithKind } from '@taquito/taquito';
 import { useWallet } from '@/lib/wallet';
 import { useActiveWallet } from '@/lib/account';
@@ -27,6 +27,15 @@ const SLIPPAGES = [
 const MIN_SLIPPAGE_BPS = 0;
 const MAX_SLIPPAGE_BPS = 4900;
 
+// Validate the recipient EVM address (0x…) for the "send to another address" option — the swap output is an
+// EVM-side token, so the free-route receiver must be a 0x address. Empty → a required error.
+function resolveEvmRecipient(input: string): { recipient: string | null; error: string | null } {
+  const v = input.trim();
+  if (!v) return { recipient: null, error: 'Enter a recipient address' };
+  if (/^0x[0-9a-fA-F]{40}$/.test(v)) return { recipient: v, error: null };
+  return { recipient: null, error: 'Enter a valid 0x EVM address' };
+}
+
 export function BridgeModal({ src, dst, amount, onClose }: { src: FreeRouteToken; dst: FreeRouteToken; amount: bigint; onClose: () => void }) {
   const { tezos, michelsonAddress, aliasAddress } = useWallet(); // Temple path (Michelson signing + receipt)
   const aw = useActiveWallet();
@@ -37,11 +46,23 @@ export function BridgeModal({ src, dst, amount, onClose }: { src: FreeRouteToken
   const setSlippageBps = useUi((s) => s.setSlippageBps);
   const [customSlippage, setCustomSlippage] = useState(() => (SLIPPAGES.some((s) => s.bps === slippageBps) ? '' : String(slippageBps / 100)));
 
+  const [recipientMode, setRecipientMode] = useState<'me' | 'other'>('me'); // where the swap output lands
+  const [recipientInput, setRecipientInput] = useState(''); // 0x address used only in 'other' mode
+  // 'me' → null (default self, no error). 'other' → the validated 0x receiver, with a required/invalid error.
+  const { recipient: resolvedReceiver, error: recipientError } = useMemo(
+    () => (recipientMode === 'me' ? { recipient: null, error: null } : resolveEvmRecipient(recipientInput)),
+    [recipientMode, recipientInput],
+  );
+  // our own EVM receiver on the active side (MetaMask: the 0x account · Temple: the michelson account's alias).
+  // a custom receiver equal to it is just "to me" — drop it so the receipt measures normally (with fee add-back).
+  const selfEvm = (aw.kind === 'metamask' ? aw.evm.evmAddress : aliasAddress) ?? '';
+  const receiver = resolvedReceiver && resolvedReceiver.toLowerCase() !== selfEvm.toLowerCase() ? resolvedReceiver : null;
+
   const [details, setDetails] = useState<SwapDetails | null>(null);
   // the executable, discriminated by the active signing direction: Michelson op-group vs EVM tx batch
   const [built, setBuilt] = useState<{ kind: 'temple'; ops: ParamsWithKind[] } | { kind: 'metamask'; txs: EvmTxRequest[] } | null>(null);
   const [receipt, setReceipt] = useState<SwapReceipt | null>(null);
-  const [done, setDone] = useState<{ hashes: string[]; evm: boolean } | null>(null); // fallback when no measured receipt
+  const [done, setDone] = useState<{ hashes: string[]; evm: boolean; recipient?: string } | null>(null); // fallback when no measured receipt
   const [quoting, setQuoting] = useState(false);
   const [busy, setBusy] = useState(false);
   const [finalizing, setFinalizing] = useState(false); // tx sent, building the on-chain receipt
@@ -62,8 +83,8 @@ export function BridgeModal({ src, dst, amount, onClose }: { src: FreeRouteToken
       setBuilt(null); // never send a stale batch mid-requote
       const job =
         aw.kind === 'metamask'
-          ? buildEvmSwapBatch(payer, src, dst, amount, slippageBps).then(({ txs, details: d }) => ({ b: { kind: 'metamask' as const, txs }, d }))
-          : buildSwapBatch(payer, src, dst, amount, slippageBps).then(({ ops, details: d }) => ({ b: { kind: 'temple' as const, ops }, d }));
+          ? buildEvmSwapBatch(payer, src, dst, amount, slippageBps, receiver).then(({ txs, details: d }) => ({ b: { kind: 'metamask' as const, txs }, d }))
+          : buildSwapBatch(payer, src, dst, amount, slippageBps, receiver).then(({ ops, details: d }) => ({ b: { kind: 'temple' as const, ops }, d }));
       job
         .then(({ b, d }) => {
           if (!cancelled) {
@@ -87,7 +108,7 @@ export function BridgeModal({ src, dst, amount, onClose }: { src: FreeRouteToken
       clearInterval(id);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [payer, aw.kind, src, dst, amount, slippageBps]);
+  }, [payer, aw.kind, src, dst, amount, slippageBps, receiver]);
 
   // 1s tick for the "updating in Ns" countdown
   const [now, setNow] = useState(() => Date.now());
@@ -107,12 +128,14 @@ export function BridgeModal({ src, dst, amount, onClose }: { src: FreeRouteToken
       : isXtz(src.address)
         ? 'from michelson account'
         : 'from evm alias';
-  const landing =
+  // where the output lands by default (no custom receiver): the dst token's holder on the active wallet side
+  const selfLanding =
     aw.kind === 'metamask'
-      ? 'to evm account'
+      ? 'evm account'
       : isXtz(dst.address)
-        ? 'to michelson account (auto-forward)'
-        : 'to evm alias';
+        ? 'michelson account (auto-forward)'
+        : 'evm alias';
+  const landing = receiver ? `to ${short(receiver, 6)}` : `to ${selfLanding}`;
 
   async function confirm() {
     if (!built || !details) return;
@@ -123,23 +146,26 @@ export function BridgeModal({ src, dst, amount, onClose }: { src: FreeRouteToken
       if (built.kind === 'metamask') {
         const acct = aw.evm.evmAddress;
         if (!acct) return;
-        // snapshot EVM-side balances BEFORE so the receipt is measured (mirror of the Michelson path).
-        // native XTZ is read in WEI so the receipt can isolate the swap amount without sub-mutez rounding noise.
+        // snapshot EVM-side balances BEFORE so the receipt is measured. native XTZ read in WEI to avoid sub-mutez noise.
         const before = {
           native: await fetchEvmXtzBalanceWei(acct),
           src: isXtz(src.address) ? 0n : await fetchErc20Balance(src.address, acct),
           dst: isXtz(dst.address) ? 0n : await fetchErc20Balance(dst.address, acct),
         };
+        // a custom receiver gets the dst on the EVM side — snapshot its dst balance so the receipt can measure it there
+        const dstReceiver = receiver
+          ? { address: receiver, before: isXtz(dst.address) ? await fetchEvmXtzBalanceWei(receiver) : await fetchErc20Balance(dst.address, receiver) }
+          : null;
         const { hashes } = await aw.evm.sendCalls(built.txs, (i) => setSigningIndex(i));
         setSigningIndex(null);
         setFinalizing(true);
         refresh();
         try {
-          const r = await buildEvmSwapReceipt({ hashes, stepLabels: details.steps.map((s) => s.kind), account: acct, src, dst, quotedPay: details.payAmount, minOut: details.minOut, before });
+          const r = await buildEvmSwapReceipt({ hashes, stepLabels: details.steps.map((s) => s.kind), account: acct, src, dst, quotedPay: details.payAmount, minOut: details.minOut, before, dstReceiver });
           addSwap(r);
           setReceipt(r);
         } catch {
-          setDone({ hashes, evm: true }); // measured receipt unavailable — fall back to the link
+          setDone({ hashes, evm: true, recipient: receiver ?? undefined }); // measured receipt unavailable — fall back to the link
         }
         return;
       }
@@ -152,15 +178,19 @@ export function BridgeModal({ src, dst, amount, onClose }: { src: FreeRouteToken
         isXtz(dst.address) ? Promise.resolve(0n) : fetchErc20Balance(dst.address, aliasAddress),
       ]);
       const before = { xtz: bxtz, src: isXtz(src.address) ? bxtz : bsrc, dst: isXtz(dst.address) ? bxtz : bdst };
+      // a custom receiver gets the dst on the EVM side — snapshot its dst balance so the receipt can measure it there
+      const dstReceiver = receiver
+        ? { address: receiver, before: isXtz(dst.address) ? await fetchEvmXtzBalanceWei(receiver) : await fetchErc20Balance(dst.address, receiver) }
+        : null;
       const hash = await sendWalletGroup(tezos, built.ops);
       setFinalizing(true);
       refresh();
       try {
-        const r = await buildSwapReceipt({ opHash: hash, account: michelsonAddress, aliasAddress, src, dst, quotedPay: details.payAmount, minOut: details.minOut, before });
+        const r = await buildSwapReceipt({ opHash: hash, account: michelsonAddress, aliasAddress, src, dst, quotedPay: details.payAmount, minOut: details.minOut, before, dstReceiver });
         addSwap(r); // record in the activity log
         setReceipt(r);
       } catch {
-        setDone({ hashes: [hash], evm: false }); // receipt unavailable (indexer lag) — the swap itself still succeeded
+        setDone({ hashes: [hash], evm: false, recipient: receiver ?? undefined }); // receipt unavailable (indexer lag) — the swap itself still succeeded
       }
     } catch (e) {
       setErr(txErrorMessage(e));
@@ -176,7 +206,13 @@ export function BridgeModal({ src, dst, amount, onClose }: { src: FreeRouteToken
     return (
       <SubmittedModal
         title="Swap submitted"
-        note={done.evm ? 'Confirmed on-chain. Output landed on your evm account.' : 'Confirmed on-chain. The measured receipt wasn’t ready yet (indexer lag) — balances refresh shortly.'}
+        note={
+          done.recipient
+            ? `Confirmed on-chain. Output sent to ${short(done.recipient, 6)}.`
+            : done.evm
+              ? 'Confirmed on-chain. Output landed on your evm account.'
+              : 'Confirmed on-chain. The measured receipt wasn’t ready yet (indexer lag) — balances refresh shortly.'
+        }
         hashes={done.hashes}
         evm={done.evm}
         onClose={onClose}
@@ -286,6 +322,53 @@ export function BridgeModal({ src, dst, amount, onClose }: { src: FreeRouteToken
                   </div>
                 </div>
 
+                {/* recipient — where the swap output lands: yourself (default) or another EVM address */}
+                <div className="rounded-lg border border-edge p-2.5">
+                  <div className="flex items-center gap-2">
+                    <span className="label">Recipient</span>
+                    <button
+                      type="button"
+                      onClick={() => setRecipientMode('me')}
+                      className={`chip ${recipientMode === 'me' ? 'border-accent text-accent' : ''}`}
+                    >
+                      To me
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setRecipientMode('other')}
+                      className={`chip ${recipientMode === 'other' ? 'border-accent text-accent' : ''}`}
+                    >
+                      Another address
+                    </button>
+                  </div>
+                  {recipientMode === 'me' ? (
+                    <p className="mt-1.5 text-[11px] text-slate-600">Output lands on your {selfLanding}.</p>
+                  ) : (
+                    <>
+                      <input
+                        className={`input mt-2 font-mono text-xs ${recipientError ? 'border-rose-400/60' : ''}`}
+                        placeholder="0x… EVM address"
+                        value={recipientInput}
+                        onChange={(e) => setRecipientInput(e.target.value)}
+                        spellCheck={false}
+                        autoFocus
+                      />
+                      <p className="mt-1.5 text-[11px] text-slate-600">
+                        {recipientError ? (
+                          <span className="text-rose-400">{recipientError}</span>
+                        ) : !receiver ? (
+                          // a valid address that equals our own → collapses to "To me"
+                          <span>That’s your {selfLanding} — same as “To me”.</span>
+                        ) : (
+                          <span>
+                            {dst.symbol} → <span className="font-mono text-slate-400">{short(receiver, 8)}</span>
+                          </span>
+                        )}
+                      </p>
+                    </>
+                  )}
+                </div>
+
                 {/* steps — FROM → operation → TO notation */}
                 <div className="rounded-lg border border-edge p-2.5">
                   <div className="label mb-1">
@@ -336,7 +419,7 @@ export function BridgeModal({ src, dst, amount, onClose }: { src: FreeRouteToken
           <button className="btn-ghost" onClick={onClose} disabled={busy}>
             Cancel
           </button>
-          <button className="btn-primary" onClick={() => void confirm()} disabled={!built || busy || quoting || !enough}>
+          <button className="btn-primary" onClick={() => void confirm()} disabled={!built || busy || quoting || !enough || !!recipientError}>
             {busy
               ? finalizing
                 ? 'Finalizing…'
