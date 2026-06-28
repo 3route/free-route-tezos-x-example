@@ -150,6 +150,58 @@ const ops = freeRoute.michelson.buildSwapOperation({
 const op = await tezos.contract.batch().with(ops).send(); // a single signature
 await op.confirmation();`;
 
+const EVM_BUYER_CODE = `import {
+  FreeRouteTezosXEvm, tezosXPreviewnet, XTZ, toEvmUnits, targetForMinOut,
+  evmToMichelsonAlias, resolveApproval, objkt,
+} from '@baking-bad/free-route-tezos-x/evm';
+
+const freeRoute = new FreeRouteTezosXEvm({
+  baseUrl: FREE_ROUTE_API,
+  network: tezosXPreviewnet,
+  apiKey: FREE_ROUTE_API_KEY, // free-route API key
+});
+
+const buyerAccount = '0x…';                           // the MetaMask account (holds the ERC20, pays gas)
+const buyerAlias = evmToMichelsonAlias(buyerAccount); // the KT1 where the NFT lands
+const payToken = (await freeRoute.getTokens()).find((token) => token.symbol === 'USDC')!;
+
+const priceMutez = 4_000n; // the objkt ask price (read it from the marketplace)
+const slippageBps = 200;   // 2%
+
+// exact-out: size the XTZ out so the on-chain floor still covers the price
+const minOutTarget = targetForMinOut(priceMutez, slippageBps);
+const swapAmount = toEvmUnits(minOutTarget, XTZ.address); // mutez -> wei for the EVM API
+const swap = await freeRoute.getSwap({
+  src: payToken.address,
+  dst: XTZ.address,
+  amount: swapAmount,
+  isExactOut: true,
+  from: buyerAccount,
+  receiver: buyerAccount,
+  slippageBps,
+});
+
+// read the on-chain allowance -> pick the minimal safe approval mode (none / approve / reset+approve)
+const approval = await resolveApproval({
+  evmRpc: EVM_RPC,
+  token: payToken.address,
+  owner: buyerAccount,
+  spender: swap.tx.to,
+  amount: swap.srcAmount,
+});
+
+// approve(s) + swap, composed with the objkt fulfill (via callMichelson) -> one EvmTxRequest[] batch
+const swapTxs = freeRoute.evm.buildSwapTransaction({ swap, srcAddress: payToken.address, approval });
+const fulfill = objkt.buildEvmFulfillAskTransaction({
+  marketplace: OBJKT_MARKETPLACE,
+  askId: '1',
+  editions: 1,
+  amountMutez: priceMutez,
+});
+
+// EIP-5792 batch where supported; otherwise send sequentially (this previewnet). NFT lands on buyerAlias.
+await walletClient.sendCalls({ calls: [...swapTxs, fulfill] });`;
+
 const SERVER_CODE = `// lib/server/freeRoute.ts -- the free-route API key lives here, never in the browser
 import 'server-only';
 import { FreeRouteClient, tezosXPreviewnet, serializeQuote, serializeSwap } from '@baking-bad/free-route-tezos-x';
@@ -202,14 +254,25 @@ export const freeRoute: FreeRouteApi = {
   getTokens: () => get<FreeRouteToken[]>('tokens'),
   getQuote: async (q) => parseQuote(await get<QuoteResponseDto>('quote', serializeQuoteQuery(q))), // bigints restored
   getSwap: async (q) => parseSwap(await get<SwapResponseDto>('swap', serializeSwapQuery(q))),
-};`;
+};
+
+// ── elsewhere (browser): turn those keyless reads into ops with a network-keyed builder.
+//    The builder needs only the gateway, so no API key leaves the server. This is lib/opsMichelson.ts. ──
+import { createMichelsonOpsBuilder, tezosXPreviewnet } from '@baking-bad/free-route-tezos-x';
+
+const michelson = createMichelsonOpsBuilder(tezosXPreviewnet.michelsonGateway); // pure builder, runs anywhere
+
+const swap = await freeRoute.getSwap({ src, dst, amount, isExactOut: true, from, receiver });
+const swapOps = michelson.buildSwapOperation({ swap, srcAddress: src });
+// sign swapOps with your Beacon/Taquito wallet — or compose with a marketplace op (see the Buyer example).
+// The EVM side mirrors this: createEvmOpsBuilder(tezosXPreviewnet.evmGateway) -> evm.buildSwapTransaction(...).`;
 
 const PAGES: PageDoc[] = [
   {
     title: 'Buyer',
     href: '/buyer',
     blurb:
-      'Pay any EVM ERC20 for an XTZ-priced objkt NFT in one atomic, single-signature op-group. The swap output (native XTZ) auto-forwards to the buyer’s Michelson address and funds the marketplace fulfill.',
+      'Pay any EVM ERC20 for an XTZ-priced objkt NFT — swap to XTZ, then fulfill the ask, composed into one signed batch. From Temple it’s a single-signature Michelson op-group; from MetaMask, an EVM tx batch that reaches objkt via callMichelson.',
     code: BUYER_CODE,
   },
   {
@@ -232,7 +295,7 @@ const PAGES: PageDoc[] = [
   },
 ];
 
-export default async function AboutPage() {
+export default async function DocsPage() {
   // highlight each sample server-side (shiki) — pre-rendered HTML, no client JS
   const codeHtml: Record<string, string> = Object.fromEntries(
     await Promise.all(
@@ -243,9 +306,17 @@ export default async function AboutPage() {
   );
   const serverHtml = await codeToHtml(SERVER_CODE, { lang: 'ts', theme: 'github-dark' });
   const clientHtml = await codeToHtml(CLIENT_CODE, { lang: 'ts', theme: 'github-dark' });
+  const evmHtml = await codeToHtml(EVM_BUYER_CODE, { lang: 'ts', theme: 'github-dark' });
 
   return (
     <div className="space-y-5">
+      {/* not-production-ready note */}
+      <div className="rounded-xl border border-amber-400/30 bg-amber-400/10 px-4 py-3 text-sm text-amber-200">
+        <span className="font-semibold">⚠️ Not production-ready.</span> This app only demonstrates how to integrate the{' '}
+        <span className="font-mono">@baking-bad/free-route-tezos-x</span> SDK — it is not audited or hardened for real
+        use. Running it against mainnet is entirely at your own risk.
+      </div>
+
       {/* intro */}
       <div className="card">
         <h1 className="text-lg font-semibold">Demo docs</h1>
@@ -263,7 +334,8 @@ export default async function AboutPage() {
           <a className="text-accent hover:underline" href="/buyer">
             paying any ERC20 for an XTZ-priced asset
           </a>{' '}
-          (e.g. an objkt NFT), composed into a single atomic op-group and signed once from the Michelson side.
+          (e.g. an objkt NFT), composed into ready-to-sign ops. Either flow can be driven from <span className="text-slate-300">either side</span> — a
+          Michelson op-group (Temple) or an EVM tx batch (MetaMask).
         </p>
         <div className="mt-4 flex flex-wrap gap-2">
           <a className="btn-ghost" href={NPM} target="_blank" rel="noreferrer">
@@ -279,12 +351,25 @@ export default async function AboutPage() {
       <div className="card">
         <div className="label mb-2">How the SDK works</div>
         <p className="text-sm text-slate-400">
-          Tezos X exposes both a Michelson (Tezlink) and an EVM (Etherlink) interface, bridged by{' '}
-          <span className="font-mono text-slate-300">call_evm</span>. The SDK builds Michelson ops that call the EVM-side
-          free-route router — an ERC20 → XTZ swap (with the right approvals) whose native-XTZ output auto-forwards to
-          your Michelson account, which can then fund another Michelson op (e.g. a marketplace purchase). It only
-          prepares the ops — you sign and broadcast with your own Taquito toolkit.
+          Tezos X is one chain with two interfaces — Michelson (Tezlink) and EVM (Etherlink) — that can call each other
+          atomically in a single transaction. The SDK prepares the calls for whichever side signs:
         </p>
+        <ul className="mt-2 list-disc space-y-2 pl-5 text-sm text-slate-400">
+          <li>
+            <span className="text-slate-300">Michelson-native</span> (your tz1 signs) — the op-group calls the EVM-side
+            router via <span className="font-mono text-slate-300">call_evm</span> as your{' '}
+            <span className="text-slate-300">evm alias</span>; the swap’s native-XTZ output auto-forwards to your tz1,
+            which then funds a Michelson op (e.g. the marketplace fulfill). One atomic, single-signature group.
+          </li>
+          <li>
+            <span className="text-slate-300">EVM-native</span> (your 0x signs) — the{' '}
+            <span className="font-mono text-slate-300">/swap</span> response is a raw EVM tx you send directly; to reach a
+            Michelson contract you call <span className="font-mono text-slate-300">callMichelson</span> on the gateway as
+            your <span className="text-slate-300">michelson alias</span> (a KT1), so the NFT lands there. A wallet batches
+            approve + swap + fulfill via EIP-5792, or sends them sequentially.
+          </li>
+        </ul>
+        <p className="mt-2 text-sm text-slate-400">Either way the SDK only prepares the ops — you sign and broadcast with your own wallet.</p>
       </div>
 
       {/* server-side reads (BFF) */}
@@ -297,7 +382,10 @@ export default async function AboutPage() {
           the server, <span className="font-mono text-slate-300">serialize*</span> /{' '}
           <span className="font-mono text-slate-300">parse*</span> DTO helpers so quotes and swaps cross the HTTP boundary
           without losing their bigint fields, and a <span className="font-mono text-slate-300">FreeRouteApi</span>{' '}
-          interface the browser implements as a thin, keyless client over those endpoints.{' '}
+          interface the browser implements as a thin, keyless client over those endpoints. The gateway-bound op builders
+          (<span className="font-mono text-slate-300">createMichelsonOpsBuilder</span> /{' '}
+          <span className="font-mono text-slate-300">createEvmOpsBuilder</span>) then turn those keyless reads into
+          ready-to-sign ops in the browser — see the tail of the Client sample.{' '}
           <a
             className="text-accent hover:underline"
             href="https://github.com/3route/free-route-tezos-x-example/tree/main/app/api/free-route"
@@ -307,6 +395,12 @@ export default async function AboutPage() {
             See the source
           </a>
           .
+        </p>
+        <p className="mt-2 text-xs text-slate-500">
+          The per-page samples use the bundled facade (<span className="font-mono text-slate-400">FreeRouteTezosX</span>,
+          one place holds the key) for brevity. This app uses the split above — keyed{' '}
+          <span className="font-mono text-slate-400">FreeRouteClient</span> on the server, keyless reads + builders on the
+          client. The SDK README covers all three tiers (facade · client+builder split · low-level builders).
         </p>
         <div className="mt-3 space-y-3">
           <div>
@@ -340,6 +434,21 @@ export default async function AboutPage() {
             )}
           </div>
         ))}
+      </div>
+
+      {/* EVM (MetaMask) — the mirror, after the buy/sell pages */}
+      <div className="card">
+        <div className="label mb-2">EVM (MetaMask) — the same buy, native txs</div>
+        <p className="text-sm text-slate-400">
+          From a native EVM account the builders return an <span className="font-mono text-slate-300">EvmTxRequest[]</span>{' '}
+          batch — <span className="font-mono text-slate-300">approve + swap</span> on the router, then the marketplace
+          fulfill via <span className="font-mono text-slate-300">callMichelson</span>. The NFT lands on the account’s KT1
+          alias. Send it with one EIP-5792 <span className="font-mono text-slate-300">wallet_sendCalls</span> (or
+          sequentially where unsupported).
+        </p>
+        <div className="mt-3">
+          <CodeBlock html={evmHtml} code={EVM_BUYER_CODE} />
+        </div>
       </div>
 
       <p className="px-1 text-xs text-slate-600">Running on Tezos X previewnet.</p>

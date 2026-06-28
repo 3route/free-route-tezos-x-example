@@ -4,9 +4,10 @@ import { create } from 'zustand';
 import { XTZ_ADDRESS, isXtz, xtzMutezToWei } from '@baking-bad/free-route-tezos-x';
 import type { FreeRouteToken } from '@baking-bad/free-route-tezos-x';
 import { freeRoute } from './freeRoute';
-import { fetchErc20Balance, fetchListings, fetchOwned, fetchXtzBalance, type Listing, type OwnedToken } from './tzkt';
+import { fetchErc20Balance, fetchEvmXtzBalance, fetchListings, fetchOwned, fetchXtzBalance, type Listing, type OwnedToken } from './tzkt';
 import { useUi } from './ui';
 import { fmtSig } from './format';
+import type { WalletKind } from './account';
 
 // free-route token registry (payment options live here).
 export function useTokens() {
@@ -48,20 +49,24 @@ const useBalancesStore = create<BalancesState>((set) => ({
 
 export const BALANCES_REFRESH_MS = 30_000; // same cadence as the rate quote and the buy re-quote
 
-// Mount ONCE (top-level) with the connected addresses + pay tokens. Fetches now, on every global bump (refresh),
-// and every 30s; writes into the shared store. No-op until both addresses and the token list are available.
-export function useBalancesSync(aliasAddress: string | null, michelsonAddress: string | null, payTokens: FreeRouteToken[]) {
+// Mount ONCE (top-level) with the active wallet's identities + pay tokens. Fetches now, on every global bump
+// (refresh), and every 30s; writes into the shared store. No-op until the addresses and the token list exist.
+// ERC20s always live on the EVM side under `evmPayer` (Temple: the Michelson alias; MetaMask: the 0x account);
+// XTZ is the Michelson-account balance for Temple, the EVM-account gas balance for MetaMask.
+export function useBalancesSync(kind: WalletKind | null, evmPayer: string | null, michelsonAddress: string | null, payTokens: FreeRouteToken[]) {
   const apply = useBalancesStore((s) => s.apply);
   const bump = useUi((s) => s.bump);
   useEffect(() => {
-    if (!aliasAddress || !michelsonAddress || !payTokens.length) return;
+    if (!evmPayer || !payTokens.length) return;
     let cancelled = false;
     const fetchAll = async () => {
       apply({ loading: true });
       try {
+        const xtzP =
+          kind === 'metamask' ? fetchEvmXtzBalance(evmPayer).catch(() => 0n) : michelsonAddress ? fetchXtzBalance(michelsonAddress).catch(() => 0n) : Promise.resolve(0n);
         const [xtz, entries] = await Promise.all([
-          fetchXtzBalance(michelsonAddress).catch(() => 0n),
-          Promise.all(payTokens.map(async (t) => [t.address, await fetchErc20Balance(t.address, aliasAddress).catch(() => 0n)] as const)),
+          xtzP,
+          Promise.all(payTokens.map(async (t) => [t.address, await fetchErc20Balance(t.address, evmPayer).catch(() => 0n)] as const)),
         ]);
         if (!cancelled) apply({ xtz, erc: Object.fromEntries(entries), updatedAt: Date.now() });
       } finally {
@@ -78,7 +83,7 @@ export function useBalancesSync(aliasAddress: string | null, michelsonAddress: s
       document.removeEventListener('visibilitychange', onVisible);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [aliasAddress, michelsonAddress, payTokens, bump]);
+  }, [kind, evmPayer, michelsonAddress, payTokens, bump]);
 }
 
 // Read the shared balances. `refresh` triggers a global bump, which re-runs useBalancesSync.

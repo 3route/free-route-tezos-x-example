@@ -61,7 +61,7 @@ export function LogPanel() {
       </div>
 
       {/* modals live OUTSIDE the .card — its backdrop-blur-sm creates a containing block that would trap fixed overlays */}
-      {sel?.kind === 'buy' && <ReceiptModal receipt={sel.receipt} token={sel.token} tokenId={sel.tokenId} onClose={() => setSel(null)} />}
+      {sel?.kind === 'buy' && <ReceiptModal receipt={sel.receipt} token={sel.token} tokenId={sel.tokenId} askId={sel.askId} onClose={() => setSel(null)} />}
       {sel?.kind === 'swap' && <SwapReceiptModal receipt={sel.receipt} onClose={() => setSel(null)} />}
       {sel?.kind === 'mint' && <MintReceiptModal receipt={sel.receipt} onClose={() => setSel(null)} />}
     </>

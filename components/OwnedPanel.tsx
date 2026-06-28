@@ -1,17 +1,18 @@
 'use client';
 import { useOwned } from '@/lib/hooks';
-import { useWallet } from '@/lib/wallet';
+import { useActiveWallet } from '@/lib/account';
 import { nftName } from '@/lib/names';
 import { short } from '@/lib/format';
 import { CFG } from '@/lib/config';
 import { NftArt } from './NftArt';
 
 export function OwnedPanel() {
-  const { connected, michelsonAddress } = useWallet();
-  const { owned, loading, refresh } = useOwned(michelsonAddress);
+  const aw = useActiveWallet();
+  // NFTs are owned on the Michelson side: the tz1 (Temple) or the EVM account's KT1 alias (MetaMask).
+  const { owned, loading, refresh } = useOwned(aw.michelsonOwner);
 
-  if (!connected) {
-    return <div className="card text-sm text-slate-500">Connect Temple to see the NFTs you own.</div>;
+  if (!aw.connected) {
+    return <div className="card text-sm text-slate-500">Connect a wallet to see the NFTs you own.</div>;
   }
 
   return (

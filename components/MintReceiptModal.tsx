@@ -36,6 +36,10 @@ export function MintReceiptModal({ receipt: r, onClose }: { receipt: MintReceipt
               <span className="text-slate-400">Token ids</span>
               <span className="shrink-0 font-mono">{idRange}</span>
             </div>
+            <div className="flex items-start justify-between gap-3">
+              <span className="text-slate-400">Minted to</span>
+              <span className="shrink-0 font-mono text-xs text-slate-400">{r.evm ? 'michelson alias' : 'michelson account'}</span>
+            </div>
             <div className="flex items-start justify-between gap-3 border-t border-edge pt-1.5">
               <span className="text-slate-400">Total ask value</span>
               <span className="shrink-0 font-mono">{xtz(totalMutez)}</span>
@@ -67,12 +71,13 @@ export function MintReceiptModal({ receipt: r, onClose }: { receipt: MintReceipt
               <a
                 key={h}
                 className="flex items-center justify-between gap-3 font-mono text-xs text-accent hover:underline"
-                href={`${CFG.explorer}/${h}`}
+                href={r.evm ? `${CFG.evmExplorer}/tx/${h}` : `${CFG.explorer}/${h}`}
                 target="_blank"
                 rel="noreferrer"
+                title={h}
               >
                 <span className="truncate">{h}</span>
-                <span className="shrink-0 text-slate-500">{r.hashes.length > 1 ? `batch ${i + 1} ↗` : 'view on tzkt ↗'}</span>
+                <span className="shrink-0 text-slate-500">{r.txLabels?.[i] ? `${r.txLabels[i]} ↗` : r.evm ? 'tx ↗' : r.hashes.length > 1 ? `batch ${i + 1} ↗` : 'view on tzkt ↗'}</span>
               </a>
             ))}
           </div>

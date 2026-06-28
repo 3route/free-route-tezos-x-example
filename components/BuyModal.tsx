@@ -3,16 +3,20 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import type { ParamsWithKind } from '@taquito/taquito';
 import { useWallet } from '@/lib/wallet';
+import { useActiveWallet } from '@/lib/account';
 import { useUi } from '@/lib/ui';
 import { useBalances, useTokens } from '@/lib/hooks';
-import { buildBuyBatch, sendWalletGroup, type BuyDetails } from '@/lib/ops';
+import { buildBuyBatch, sendWalletGroup, type BuyDetails } from '@/lib/opsMichelson';
+import { buildEvmBuyBatch } from '@/lib/opsEvm';
+import type { EvmTxRequest } from '@baking-bad/free-route-tezos-x';
 import { fmtUnits, mutezToXtz, short } from '@/lib/format';
 import { nftName } from '@/lib/names';
 import { useHistory } from '@/lib/history';
-import { CFG } from '@/lib/config';
-import { fetchErc20Balance, fetchXtzBalance, type Listing } from '@/lib/tzkt';
-import { buildBuyReceipt, type BuyReceipt } from '@/lib/receipt';
+import { txErrorMessage } from '@/lib/errors';
+import { fetchErc20Balance, fetchEvmXtzBalanceWei, fetchXtzBalance, type Listing } from '@/lib/tzkt';
+import { buildBuyReceipt, buildEvmBuyReceipt, type BuyReceipt } from '@/lib/receipt';
 import { ReceiptModal } from './ReceiptModal';
+import { SubmittedModal } from './SubmittedModal';
 import { NftArt } from './NftArt';
 
 const Spinner = () => <div className="h-6 w-6 animate-spin rounded-full border-2 border-edge border-t-accent" />;
@@ -26,7 +30,8 @@ const MIN_SLIPPAGE_BPS = 0; // 0% — zero tolerance is allowed (warned as very 
 const MAX_SLIPPAGE_BPS = 4900; // 49%
 
 export function BuyModal({ listing, onClose }: { listing: Listing; onClose: () => void }) {
-  const { tezos, michelsonAddress, aliasAddress } = useWallet();
+  const { tezos, michelsonAddress, aliasAddress } = useWallet(); // Temple path (Michelson signing + receipt)
+  const aw = useActiveWallet();
   const refresh = useUi((s) => s.refresh);
   const addBuy = useHistory((s) => s.addBuy);
   const { payTokens } = useTokens();
@@ -45,28 +50,39 @@ export function BuyModal({ listing, onClose }: { listing: Listing; onClose: () =
   );
   const [details, setDetails] = useState<BuyDetails | null>(null);
   const [receipt, setReceipt] = useState<BuyReceipt | null>(null);
-  const [ops, setOps] = useState<ParamsWithKind[] | null>(null);
+  const [done, setDone] = useState<{ hashes: string[]; evm: boolean } | null>(null); // fallback when no measured receipt
+  // the executable, discriminated by the active signing direction: Michelson op-group vs EVM tx batch
+  const [built, setBuilt] = useState<{ kind: 'temple'; ops: ParamsWithKind[] } | { kind: 'metamask'; txs: EvmTxRequest[] } | null>(null);
   const [quoting, setQuoting] = useState(false);
   const [buying, setBuying] = useState(false);
   const [finalizing, setFinalizing] = useState(false); // tx sent, building the on-chain receipt
+  const [signingIndex, setSigningIndex] = useState<number | null>(null); // MetaMask sequential: which call is being signed
   const [err, setErr] = useState<string | null>(null);
   const [quotedAt, setQuotedAt] = useState<number | null>(null); // last successful quote (for the 30s countdown)
 
   const priceMutez = Number(listing.priceMutez);
 
+  // EVM address that runs the swap & pays: the connected 0x (MetaMask) or the Michelson account's alias (Temple).
+  const payer = aw.kind === 'metamask' ? aw.evm.evmAddress : michelsonAddress;
+
   // (re)quote on token/slippage change, and auto-refresh every 30s (re-hits the free-route SDK)
   useEffect(() => {
-    if (!tezos || !michelsonAddress || !token) return;
+    if (!payer || !token) return;
     let cancelled = false;
     const requote = () => {
       setQuoting(true);
       setErr(null);
-      setOps(null); // never allow sending stale ops mid-requote (Buy is also disabled while quoting)
+      setBuilt(null); // never allow sending a stale batch mid-requote (Buy is also disabled while quoting)
       // keep the previous `details` on screen (stale-while-revalidate) so the panel doesn't collapse/jump
-      buildBuyBatch(michelsonAddress, { askId: listing.askId, tokenId: listing.tokenId, priceMutez }, token, slippageBps)
-        .then(({ ops: o, details: d }) => {
+      const ask = { askId: listing.askId, tokenId: listing.tokenId, priceMutez };
+      const job =
+        aw.kind === 'metamask'
+          ? buildEvmBuyBatch(payer, ask, token, slippageBps).then(({ txs, details: d }) => ({ b: { kind: 'metamask' as const, txs }, d }))
+          : buildBuyBatch(payer, ask, token, slippageBps).then(({ ops, details: d }) => ({ b: { kind: 'temple' as const, ops }, d }));
+      job
+        .then(({ b, d }) => {
           if (!cancelled) {
-            setOps(o);
+            setBuilt(b);
             setDetails(d);
             setQuotedAt(Date.now());
           }
@@ -85,7 +101,8 @@ export function BuyModal({ listing, onClose }: { listing: Listing; onClose: () =
       cancelled = true;
       clearInterval(id);
     };
-  }, [tezos, michelsonAddress, token, slippageBps, listing, priceMutez]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [payer, aw.kind, token, slippageBps, listing, priceMutez]);
 
   // 1s tick for the "updating in Ns" countdown to the next 30s re-quote
   const [now, setNow] = useState(() => Date.now());
@@ -98,15 +115,52 @@ export function BuyModal({ listing, onClose }: { listing: Listing; onClose: () =
   const bal = token ? erc[token.address] ?? 0n : 0n;
   const need = details ? BigInt(details.payAmount) : 0n;
   const enough = !details || bal >= need;
+  // where the leftover XTZ (change) lands: the Michelson account (Temple) or the EVM account (MetaMask)
+  // where the pay-token is debited from / where the swapped XTZ + leftover change land — holder on the active side.
+  const payFrom = aw.kind === 'metamask' ? 'from evm account' : 'from evm alias';
+  const xtzTo = aw.kind === 'metamask' ? 'to evm account' : 'to michelson account (auto-forward)';
 
   async function confirm() {
-    if (!tezos || !ops || !token || !michelsonAddress || !aliasAddress || !details) return;
+    if (!built || !token || !details) return;
     setBuying(true);
     setErr(null);
     try {
+      // MetaMask (EVM): send the approve+swap+fulfill batch; the NFT lands on the account's KT1 alias (see Owned).
+      if (built.kind === 'metamask') {
+        const acct = aw.evm.evmAddress;
+        const nftAlias = aw.evm.aliasAddress; // KT1 where the NFT lands
+        if (!acct || !nftAlias) return;
+        // snapshot EVM-side balances BEFORE so the receipt is measured (mirror of the Michelson path)
+        const [xtz0, usdc0] = await Promise.all([fetchEvmXtzBalanceWei(acct), fetchErc20Balance(token.address, acct)]);
+        const { hashes } = await aw.evm.sendCalls(built.txs, (i) => setSigningIndex(i));
+        setSigningIndex(null);
+        setFinalizing(true);
+        refresh();
+        try {
+          const r = await buildEvmBuyReceipt({
+            hashes,
+            stepLabels: details.steps.map((s) => s.kind),
+            account: acct,
+            nftAlias,
+            payTokenAddress: token.address,
+            tokenId: listing.tokenId,
+            quotedSrcAmount: BigInt(details.payAmount),
+            expectedChange: BigInt(details.changeMutez),
+            fulfillMutez: BigInt(priceMutez),
+            before: { xtz: xtz0, usdc: usdc0 },
+          });
+          addBuy(r, token, listing.tokenId, listing.askId);
+          setReceipt(r);
+        } catch {
+          setDone({ hashes, evm: true }); // measured receipt unavailable — fall back to the link
+        }
+        return;
+      }
+      // Temple (Michelson): sign the op-group, then build the measured on-chain receipt.
+      if (!tezos || !michelsonAddress || !aliasAddress) return;
       // snapshot real balances BEFORE (live node reads) so the receipt is measured, not estimated
       const [xtz0, usdc0] = await Promise.all([fetchXtzBalance(michelsonAddress), fetchErc20Balance(token.address, aliasAddress)]);
-      const hash = await sendWalletGroup(tezos, ops);
+      const hash = await sendWalletGroup(tezos, built.ops);
       setFinalizing(true); // tx confirmed — now reading the on-chain receipt
       refresh(); // update listings/balances in the background
       // build the exact on-chain receipt (best-effort — never block the success on indexer lag)
@@ -121,21 +175,32 @@ export function BuyModal({ listing, onClose }: { listing: Listing; onClose: () =
           expectedChange: BigInt(details.changeMutez),
           before: { xtz: xtz0, usdc: usdc0 },
         });
-        addBuy(r, token, listing.tokenId); // record in the activity log
+        addBuy(r, token, listing.tokenId, listing.askId); // record in the activity log
         setReceipt(r); // show the receipt modal
       } catch {
-        onClose(); // receipt unavailable (indexer lag) — the buy itself still succeeded
+        setDone({ hashes: [hash], evm: false }); // receipt unavailable (indexer lag) — the buy itself still succeeded
       }
     } catch (e) {
-      setErr((e as Error).message);
+      setErr(txErrorMessage(e));
     } finally {
       setBuying(false);
       setFinalizing(false);
+      setSigningIndex(null);
     }
   }
 
   // once bought, swap the review for the measured on-chain receipt
-  if (receipt && token) return <ReceiptModal receipt={receipt} token={token} tokenId={listing.tokenId} onClose={onClose} />;
+  if (receipt && token) return <ReceiptModal receipt={receipt} token={token} tokenId={listing.tokenId} askId={listing.askId} onClose={onClose} />;
+  if (done)
+    return (
+      <SubmittedModal
+        title="Purchase submitted"
+        note={done.evm ? 'Confirmed on-chain. The NFT landed on your michelson alias — see Owned.' : 'Confirmed on-chain. The measured receipt wasn’t ready yet (indexer lag) — see Owned.'}
+        hashes={done.hashes}
+        evm={done.evm}
+        onClose={onClose}
+      />
+    );
 
   return (
     <div className="fixed inset-0 z-30 grid place-items-center bg-black/60 p-4" onClick={onClose}>
@@ -145,9 +210,7 @@ export function BuyModal({ listing, onClose }: { listing: Listing; onClose: () =
           <NftArt tokenId={listing.tokenId} className="h-14 w-14 shrink-0 rounded-xl" />
           <div className="min-w-0">
             <div className="font-semibold">{nftName(listing.tokenId)}</div>
-            <div className="font-mono text-[11px] text-slate-500">
-              ask {listing.askId} · #{short(listing.tokenId, 6)}
-            </div>
+            <div className="font-mono text-[11px] text-slate-500">ask {listing.askId}</div>
           </div>
           <div className="ml-auto text-right">
             <div className="text-xl font-semibold">{mutezToXtz(priceMutez, 6)}</div>
@@ -227,20 +290,23 @@ export function BuyModal({ listing, onClose }: { listing: Listing; onClose: () =
             )}
             {details && token && (
             <div className={`space-y-3 transition-opacity ${quoting ? 'opacity-40' : 'opacity-100'}`}>
-              {/* EVM Side */}
+              {/* pay token — the ERC20 you spend (on the evm account / evm alias) */}
               <div className="rounded-lg border border-edge p-2.5">
-                <div className="label mb-1.5">EVM Side</div>
-                <div className="flex items-center justify-between">
+                <div className="label mb-1.5">pay token</div>
+                <div className="flex items-start justify-between">
                   <span className="text-slate-400">
                     You pay <span className="text-[10px] uppercase tracking-wide text-slate-600">exact</span>
                   </span>
-                  <span className="font-mono">{fmtUnits(details.payAmount, token.decimals, token.decimals)} {token.symbol}</span>
+                  <span className="text-right font-mono">
+                    <span className="block">{fmtUnits(details.payAmount, token.decimals, token.decimals)} {token.symbol}</span>
+                    <span className="block text-[11px] text-slate-600">{payFrom}</span>
+                  </span>
                 </div>
               </div>
 
-              {/* Michelson Side */}
+              {/* native-XTZ leg: on the michelson account (Temple) or the evm account (MetaMask); the NFT lands on the michelson alias */}
               <div className="rounded-lg border border-edge p-2.5">
-                <div className="label mb-1.5">Michelson Side</div>
+                <div className="label mb-1.5">native XTZ</div>
                 <div className="divide-y divide-edge">
                   <div className="flex items-start justify-between pb-2">
                     <span className="text-slate-400">You receive</span>
@@ -250,6 +316,7 @@ export function BuyModal({ listing, onClose }: { listing: Listing; onClose: () =
                         <span className="text-[10px] uppercase tracking-wide text-slate-600">expected</span>
                       </span>
                       <span className="block text-xs text-slate-500">≥ {mutezToXtz(details.minOutMutez, 6)} XTZ guaranteed</span>
+                      <span className="block text-[11px] text-slate-600">{xtzTo}</span>
                     </span>
                   </div>
                   <div className="flex items-center justify-between py-2">
@@ -263,26 +330,34 @@ export function BuyModal({ listing, onClose }: { listing: Listing; onClose: () =
                         ≈ {mutezToXtz(details.changeMutez, 6)} XTZ{' '}
                         <span className="text-[10px] uppercase tracking-wide text-slate-600">expected</span>
                       </span>
-                      <span className="block text-xs text-slate-500">
-                        returns to your{' '}
-                        <a href={`${CFG.explorer}/${michelsonAddress}`} target="_blank" rel="noreferrer" className="text-accent hover:underline" title={michelsonAddress ?? ''}>
-                          {short(michelsonAddress ?? '', 6)}
-                        </a>
-                      </span>
+                      <span className="block text-[11px] text-slate-600">{xtzTo}</span>
                     </span>
                   </div>
                 </div>
               </div>
 
-              {/* steps */}
+              {/* steps — FROM → operation → TO notation */}
               <div className="rounded-lg border border-edge p-2.5">
-                <div className="label mb-1.5">One signature · atomic op-group</div>
+                <div className="label mb-1">
+                  {aw.kind !== 'metamask'
+                    ? 'One signature · atomic op-group'
+                    : aw.evm.atomicBatch
+                      ? '1 signature · atomic batch'
+                      : `${details.steps.length} signature${details.steps.length > 1 ? 's' : ''} · sign one by one`}
+                </div>
+                <div className="mb-2 text-[11px] text-slate-500">
+                  Signed by{' '}
+                  {aw.kind === 'metamask'
+                    ? `evm account · ${short(aw.evm.evmAddress ?? '')}`
+                    : `michelson account · ${short(michelsonAddress ?? '')}`}
+                </div>
                 <ol className="space-y-1 text-xs text-slate-400">
                   {details.steps.map((s, i) => (
-                    <li key={i} className="flex gap-2">
-                      <span className="w-3 shrink-0 text-right tabular-nums text-slate-600">{i + 1}.</span>
-                      <span>
-                        <span className="text-slate-300">{s.kind}</span> — {s.detail}
+                    <li key={i} className={`flex gap-2 ${signingIndex === i ? 'text-accent' : ''}`}>
+                      <span className="w-3 shrink-0 text-right tabular-nums text-slate-600">{signingIndex === i ? '➤' : `${i + 1}.`}</span>
+                      <span className={`font-mono ${signingIndex === i ? 'text-accent' : 'text-slate-300'}`}>
+                        {s.detail}
+                        {signingIndex === i && <span className="ml-1.5 font-sans text-[10px] uppercase tracking-wide text-accent">signing…</span>}
                       </span>
                     </li>
                   ))}
@@ -291,7 +366,7 @@ export function BuyModal({ listing, onClose }: { listing: Listing; onClose: () =
 
               {!enough && (
                 <div className="text-xs text-amber-400">
-                  Alias balance ({fmtUnits(bal, token.decimals, token.decimals)} {token.symbol}) is below the required amount.{' '}
+                  {aw.kind === 'metamask' ? 'evm account' : 'evm alias'} balance ({fmtUnits(bal, token.decimals, token.decimals)} {token.symbol}) is below the required amount.{' '}
                   <Link href="/bridge" className="font-medium underline hover:text-amber-300">
                     Get {token.symbol} on the Bridge ↗
                   </Link>
@@ -314,8 +389,14 @@ export function BuyModal({ listing, onClose }: { listing: Listing; onClose: () =
           <button className="btn-ghost" onClick={onClose} disabled={buying}>
             Cancel
           </button>
-          <button className="btn-primary" onClick={() => void confirm()} disabled={!ops || buying || quoting || !enough}>
-            {buying ? (finalizing ? 'Finalizing…' : 'Signing…') : `Buy with ${token?.symbol ?? ''}`}
+          <button className="btn-primary" onClick={() => void confirm()} disabled={!built || buying || quoting || !enough}>
+            {buying
+              ? finalizing
+                ? 'Finalizing…'
+                : signingIndex !== null && details
+                  ? `Sign ${signingIndex + 1}/${details.steps.length}…`
+                  : 'Signing…'
+              : `Buy with ${token?.symbol ?? ''}`}
           </button>
         </div>
       </div>

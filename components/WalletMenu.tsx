@@ -1,6 +1,6 @@
 'use client';
 import { useEffect, useRef, useState } from 'react';
-import { useWallet } from '@/lib/wallet';
+import { useActiveWallet } from '@/lib/account';
 import { BALANCES_REFRESH_MS, useBalances, useTokens } from '@/lib/hooks';
 import { fmtUnits, short } from '@/lib/format';
 import { CFG } from '@/lib/config';
@@ -35,10 +35,25 @@ function CopyButton({ value }: { value: string }) {
   );
 }
 
-// Header wallet control: Connect button when disconnected; otherwise an address pill that opens a
-// dropdown with balances + a Disconnect button.
+// One labeled address row (explorer link + copy).
+function AddrRow({ label, address, evm }: { label: string; address: string; evm?: boolean }) {
+  return (
+    <div className="flex items-center justify-between">
+      <span className="font-mono text-[11px] text-slate-500">{label}</span>
+      <div className="flex items-center gap-1.5">
+        <a href={(evm ? evmLink : tzktLink)(address)} target="_blank" rel="noreferrer" className="font-mono text-[11px] text-accent hover:underline" title={address}>
+          {short(address, 6)}
+        </a>
+        <CopyButton value={address} />
+      </div>
+    </div>
+  );
+}
+
+// Header wallet control: a wallet picker when disconnected; otherwise an address pill that opens a dropdown
+// with balances + Disconnect. Two signing directions: Temple (Michelson) and MetaMask (EVM).
 export function WalletMenu() {
-  const { connected, michelsonAddress, aliasAddress, connect, switchAccount, disconnect, connecting } = useWallet();
+  const aw = useActiveWallet();
   const { payTokens } = useTokens();
   const { xtz, erc, loading, updatedAt, refresh } = useBalances();
   const [open, setOpen] = useState(false);
@@ -66,19 +81,53 @@ export function WalletMenu() {
   }, [open]);
   const refreshInSec = updatedAt ? Math.max(0, Math.round(BALANCES_REFRESH_MS / 1000) - Math.round((now - updatedAt) / 1000)) : null;
 
-  if (!connected) {
+  // ── disconnected: pick a wallet ──
+  if (!aw.connected) {
     return (
-      <button className="btn-primary" onClick={() => void connect()} disabled={connecting}>
-        {connecting ? 'Connecting…' : 'Connect Temple'}
-      </button>
+      <div className="relative" ref={ref}>
+        <button className="btn-primary" onClick={() => setOpen((o) => !o)} disabled={aw.connecting}>
+          {aw.connecting ? 'Connecting…' : 'Connect wallet'}
+        </button>
+        {open && (
+          <div className="absolute right-0 z-30 mt-1.5 w-56 rounded-xl border border-edge bg-panel p-2 shadow-xl shadow-black/50">
+            <button
+              className="btn-ghost w-full justify-between"
+              onClick={() => {
+                setOpen(false);
+                void aw.temple.connect();
+              }}
+            >
+              Temple <span className="text-[10px] text-slate-500">Michelson</span>
+            </button>
+            <button
+              className="btn-ghost mt-1 w-full justify-between"
+              onClick={() => {
+                setOpen(false);
+                void aw.evm.connect().catch(() => undefined);
+              }}
+            >
+              MetaMask <span className="text-[10px] text-slate-500">EVM</span>
+            </button>
+          </div>
+        )}
+      </div>
     );
   }
+
+  const isEvm = aw.kind === 'metamask';
+  const tokensRows = payTokens.map((t) => (
+    <div key={t.address} className="flex items-center justify-between">
+      <span className="text-slate-400">{t.symbol}</span>
+      <span className="font-mono">{erc[t.address] === undefined ? '…' : fmtUnits(erc[t.address] ?? 0n, t.decimals, t.decimals)}</span>
+    </div>
+  ));
 
   return (
     <div className="relative" ref={ref}>
       <button className="btn-ghost" onClick={() => setOpen((o) => !o)}>
         <span className="h-2 w-2 rounded-full bg-accent2" />
-        <span className="font-mono">{short(michelsonAddress ?? '')}</span>
+        <span className="text-[10px] tracking-wide text-slate-500">{isEvm ? 'evm' : 'michelson'}</span>
+        <span className="font-mono">{short(aw.displayAddress ?? '')}</span>
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" className={`text-slate-500 transition-transform ${open ? 'rotate-180' : ''}`}>
           <path d="M6 9l6 6 6-6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
         </svg>
@@ -97,57 +146,62 @@ export function WalletMenu() {
           </div>
 
           <div className="text-xs">
-            {/* Michelson side — native XTZ on the tz1 address (header carries the address) */}
-            <div className="space-y-1.5">
-              <div className="flex items-center justify-between">
-                <span className="text-[10px] uppercase tracking-wide text-slate-600">Michelson</span>
-                <div className="flex items-center gap-1.5">
-                  <a href={tzktLink(michelsonAddress ?? '')} target="_blank" rel="noreferrer" className="font-mono text-[11px] text-accent hover:underline" title={michelsonAddress ?? ''}>
-                    {short(michelsonAddress ?? '', 6)}
-                  </a>
-                  <CopyButton value={michelsonAddress ?? ''} />
+            {isEvm ? (
+              <>
+                {/* EVM account — holds the ERC20s + native XTZ (gas) */}
+                <div className="space-y-1.5">
+                  <AddrRow label="evm account" address={aw.evm.evmAddress ?? ''} evm />
+                  <div className="flex items-center justify-between">
+                    <span className="text-slate-400">XTZ (gas)</span>
+                    <span className="font-mono">{xtz === null ? '…' : fmtUnits(xtz, 6, 6)}</span>
+                  </div>
+                  {tokensRows}
                 </div>
-              </div>
-              <div className="flex items-center justify-between">
-                <span className="text-slate-400">XTZ</span>
-                <span className="font-mono">{xtz === null ? '…' : fmtUnits(xtz, 6, 6)}</span>
-              </div>
-            </div>
-            {/* EVM side — ERC20s held by the alias (header carries the alias address) */}
-            <div className="mt-3 space-y-1.5 border-t border-edge pt-3">
-              <div className="flex items-center justify-between">
-                <span className="text-[10px] uppercase tracking-wide text-slate-600">EVM alias</span>
-                <div className="flex items-center gap-1.5">
-                  <a href={evmLink(aliasAddress ?? '')} target="_blank" rel="noreferrer" className="font-mono text-[11px] text-accent hover:underline" title={aliasAddress ?? ''}>
-                    {short(aliasAddress ?? '', 6)}
-                  </a>
-                  <CopyButton value={aliasAddress ?? ''} />
+                {/* Michelson alias (KT1) — where bought/minted NFTs land */}
+                <div className="mt-3 space-y-1.5 border-t border-edge pt-3">
+                  <AddrRow label="michelson alias" address={aw.evm.aliasAddress ?? ''} />
                 </div>
-              </div>
-              {payTokens.map((t) => (
-                <div key={t.address} className="flex items-center justify-between">
-                  <span className="text-slate-400">{t.symbol}</span>
-                  <span className="font-mono">{erc[t.address] === undefined ? '…' : fmtUnits(erc[t.address] ?? 0n, t.decimals, t.decimals)}</span>
+              </>
+            ) : (
+              <>
+                {/* Michelson account — native XTZ */}
+                <div className="space-y-1.5">
+                  <AddrRow label="michelson account" address={aw.temple.michelsonAddress ?? ''} />
+                  <div className="flex items-center justify-between">
+                    <span className="text-slate-400">XTZ</span>
+                    <span className="font-mono">{xtz === null ? '…' : fmtUnits(xtz, 6, 6)}</span>
+                  </div>
                 </div>
-              ))}
-            </div>
+                {/* EVM alias — holds the ERC20s */}
+                <div className="mt-3 space-y-1.5 border-t border-edge pt-3">
+                  <AddrRow label="evm alias" address={aw.temple.aliasAddress ?? ''} evm />
+                  {tokensRows}
+                </div>
+              </>
+            )}
           </div>
 
-          <button
-            className="btn-ghost mt-3 w-full"
-            disabled={connecting}
-            onClick={() => {
-              setOpen(false);
-              void switchAccount();
-            }}
-          >
-            {connecting ? 'Switching…' : 'Switch account'}
-          </button>
+          {(() => {
+            const switching = isEvm ? aw.evm.connecting : aw.temple.connecting;
+            return (
+              <button
+                className="btn-ghost mt-3 w-full"
+                disabled={switching}
+                onClick={() => {
+                  setOpen(false);
+                  if (isEvm) void aw.evm.switchAccount().catch(() => undefined);
+                  else void aw.temple.switchAccount();
+                }}
+              >
+                {switching ? 'Switching…' : 'Switch account'}
+              </button>
+            );
+          })()}
           <button
             className="btn-ghost mt-2 w-full text-rose-300 hover:bg-rose-500/10"
             onClick={() => {
               setOpen(false);
-              void disconnect();
+              aw.disconnect();
             }}
           >
             Disconnect

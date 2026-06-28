@@ -1,11 +1,12 @@
 'use client';
 import Link from 'next/link';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { useListings, usePriceCurrency, useTokens } from '@/lib/hooks';
-import { useWallet } from '@/lib/wallet';
+import { useActiveWallet } from '@/lib/account';
 import { fmtSig, mutezToXtz, short } from '@/lib/format';
 import { nftName } from '@/lib/names';
 import { BuyModal } from './BuyModal';
+import { ConnectButton } from './ConnectButton';
 import { NftArt } from './NftArt';
 import { Select, type SelectOption } from './Select';
 import type { Listing } from '@/lib/tzkt';
@@ -19,12 +20,48 @@ const SORTS: SelectOption<SortKey>[] = [
   { value: 'name', label: 'Name A–Z' },
 ];
 
+// Buy CTA. Connected → opens the buy modal. Disconnected → the shared Temple / MetaMask connect picker,
+// so a buyer can start from either signing direction instead of being forced onto one.
+function BuyButton({
+  connected,
+  sub,
+  onBuy,
+  onOpenChange,
+}: {
+  connected: boolean;
+  sub: ReactNode;
+  onBuy: () => void;
+  onOpenChange?: (open: boolean) => void; // lets the parent raise this card above siblings while the picker is open
+}) {
+  if (connected) {
+    return (
+      <button className="btn-primary mt-2 flex-col gap-0 py-2! leading-tight" onClick={onBuy}>
+        <span>Buy</span>
+        {sub}
+      </button>
+    );
+  }
+  return (
+    <ConnectButton
+      header="Connect to buy"
+      wrapperClassName="relative mt-2"
+      buttonClassName="btn-primary w-full flex-col gap-0 py-2! leading-tight"
+      onOpenChange={onOpenChange}
+    >
+      <span>Buy</span>
+      {sub}
+    </ConnectButton>
+  );
+}
+
 export function BuyerPanel() {
   const { listings, loading, refresh } = useListings();
-  const { connected, michelsonAddress, connect } = useWallet();
+  const aw = useActiveWallet();
+  const connected = aw.connected;
   const { payTokens } = useTokens();
   const { currency, setCurrency, token, convert, rateLabel, updatedAt, error } = usePriceCurrency(payTokens);
   const [sel, setSel] = useState<Listing | null>(null);
+  const [pickerOpen, setPickerOpen] = useState<string | null>(null); // askId whose connect-picker is open (raise its card)
   const [sort, setSort] = useState<SortKey>('new');
 
   const sorted = useMemo(() => {
@@ -121,9 +158,9 @@ export function BuyerPanel() {
       <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
         {sorted.map((l) => {
           const inToken = currency !== 'XTZ' ? convert(l.priceMutez) : null;
-          const isOwn = connected && l.seller === michelsonAddress; // objkt blocks buying your own ask (M_NO_SELF_FULFILL)
+          const isOwn = connected && l.seller === aw.michelsonOwner; // objkt blocks buying your own ask (M_NO_SELF_FULFILL)
           return (
-            <div key={l.askId} className="card flex flex-col p-3">
+            <div key={l.askId} className={`card flex flex-col p-3 ${pickerOpen === l.askId ? 'relative z-30' : ''}`}>
               <NftArt tokenId={l.tokenId} className="mb-3 h-28 w-full rounded-xl" />
               <div className="truncate text-sm font-medium">{nftName(l.tokenId)}</div>
               <div className="font-mono text-[11px] text-slate-500">
@@ -150,17 +187,18 @@ export function BuyerPanel() {
                   <span className="text-[11px] font-normal text-white/85">can’t buy your own</span>
                 </button>
               ) : (
-                <button
-                  className="btn-primary mt-2 flex-col gap-0 py-2! leading-tight"
-                  onClick={() => (connected ? setSel(l) : void connect())}
-                >
-                  <span>Buy</span>
-                  {token && currency !== 'XTZ' && (
-                    <span className="max-w-full truncate text-[11px] font-normal text-white/85">
-                      ≈ {inToken === null ? '…' : fmtSig(inToken, token.decimals, 4)} {token.symbol}
-                    </span>
-                  )}
-                </button>
+                <BuyButton
+                  connected={connected}
+                  onBuy={() => setSel(l)}
+                  onOpenChange={(o) => setPickerOpen(o ? l.askId : null)}
+                  sub={
+                    token && currency !== 'XTZ' ? (
+                      <span className="max-w-full truncate text-[11px] font-normal text-white/85">
+                        ≈ {inToken === null ? '…' : fmtSig(inToken, token.decimals, 4)} {token.symbol}
+                      </span>
+                    ) : null
+                  }
+                />
               )}
             </div>
           );

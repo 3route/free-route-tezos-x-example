@@ -1,5 +1,10 @@
 # objkt EVM-pay — demo dApp
 
+> [!WARNING]
+> **Not production-ready.** This app only demonstrates how to integrate the
+> [`@baking-bad/free-route-tezos-x`](https://github.com/3route/free-route-tezos-x) SDK — it is not audited or hardened
+> for real use. Running it against mainnet is entirely at your own risk.
+
 Next.js SPA on top of the **[@baking-bad/free-route-tezos-x SDK](https://github.com/3route/free-route-tezos-x)**, consumed as
 an npm package. Pages (header tabs, real routes):
 

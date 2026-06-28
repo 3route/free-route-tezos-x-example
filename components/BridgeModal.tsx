@@ -2,16 +2,20 @@
 import { useEffect, useState } from 'react';
 import type { ParamsWithKind } from '@taquito/taquito';
 import { useWallet } from '@/lib/wallet';
+import { useActiveWallet } from '@/lib/account';
 import { useUi } from '@/lib/ui';
 import { useBalances } from '@/lib/hooks';
-import { buildSwapBatch, sendWalletGroup, type SwapDetails } from '@/lib/ops';
+import { buildSwapBatch, sendWalletGroup, type SwapDetails } from '@/lib/opsMichelson';
+import { buildEvmSwapBatch } from '@/lib/opsEvm';
 import { isXtz } from '@baking-bad/free-route-tezos-x';
-import type { FreeRouteToken } from '@baking-bad/free-route-tezos-x';
-import { fmtUnits } from '@/lib/format';
+import type { EvmTxRequest, FreeRouteToken } from '@baking-bad/free-route-tezos-x';
+import { fmtUnits, short } from '@/lib/format';
 import { useHistory } from '@/lib/history';
-import { fetchErc20Balance, fetchXtzBalance } from '@/lib/tzkt';
-import { buildSwapReceipt, type SwapReceipt } from '@/lib/receipt';
+import { txErrorMessage } from '@/lib/errors';
+import { fetchErc20Balance, fetchEvmXtzBalanceWei, fetchXtzBalance } from '@/lib/tzkt';
+import { buildEvmSwapReceipt, buildSwapReceipt, type SwapReceipt } from '@/lib/receipt';
 import { SwapReceiptModal } from './SwapReceiptModal';
+import { SubmittedModal } from './SubmittedModal';
 
 const Spinner = () => <div className="h-6 w-6 animate-spin rounded-full border-2 border-edge border-t-accent" />;
 
@@ -24,7 +28,8 @@ const MIN_SLIPPAGE_BPS = 0;
 const MAX_SLIPPAGE_BPS = 4900;
 
 export function BridgeModal({ src, dst, amount, onClose }: { src: FreeRouteToken; dst: FreeRouteToken; amount: bigint; onClose: () => void }) {
-  const { tezos, michelsonAddress, aliasAddress } = useWallet();
+  const { tezos, michelsonAddress, aliasAddress } = useWallet(); // Temple path (Michelson signing + receipt)
+  const aw = useActiveWallet();
   const refresh = useUi((s) => s.refresh);
   const addSwap = useHistory((s) => s.addSwap);
   const { xtz, erc } = useBalances();
@@ -33,26 +38,36 @@ export function BridgeModal({ src, dst, amount, onClose }: { src: FreeRouteToken
   const [customSlippage, setCustomSlippage] = useState(() => (SLIPPAGES.some((s) => s.bps === slippageBps) ? '' : String(slippageBps / 100)));
 
   const [details, setDetails] = useState<SwapDetails | null>(null);
-  const [ops, setOps] = useState<ParamsWithKind[] | null>(null);
+  // the executable, discriminated by the active signing direction: Michelson op-group vs EVM tx batch
+  const [built, setBuilt] = useState<{ kind: 'temple'; ops: ParamsWithKind[] } | { kind: 'metamask'; txs: EvmTxRequest[] } | null>(null);
   const [receipt, setReceipt] = useState<SwapReceipt | null>(null);
+  const [done, setDone] = useState<{ hashes: string[]; evm: boolean } | null>(null); // fallback when no measured receipt
   const [quoting, setQuoting] = useState(false);
   const [busy, setBusy] = useState(false);
   const [finalizing, setFinalizing] = useState(false); // tx sent, building the on-chain receipt
+  const [signingIndex, setSigningIndex] = useState<number | null>(null); // MetaMask sequential: which call is being signed
   const [err, setErr] = useState<string | null>(null);
   const [quotedAt, setQuotedAt] = useState<number | null>(null);
 
+  // EVM address that runs the swap: the connected 0x (MetaMask) or the Michelson account's alias (Temple).
+  const payer = aw.kind === 'metamask' ? aw.evm.evmAddress : michelsonAddress;
+
   // (re)quote on slippage change, and auto-refresh every 30s
   useEffect(() => {
-    if (!michelsonAddress) return;
+    if (!payer) return;
     let cancelled = false;
     const requote = () => {
       setQuoting(true);
       setErr(null);
-      setOps(null); // never send stale ops mid-requote
-      buildSwapBatch(michelsonAddress, src, dst, amount, slippageBps)
-        .then(({ ops: o, details: d }) => {
+      setBuilt(null); // never send a stale batch mid-requote
+      const job =
+        aw.kind === 'metamask'
+          ? buildEvmSwapBatch(payer, src, dst, amount, slippageBps).then(({ txs, details: d }) => ({ b: { kind: 'metamask' as const, txs }, d }))
+          : buildSwapBatch(payer, src, dst, amount, slippageBps).then(({ ops, details: d }) => ({ b: { kind: 'temple' as const, ops }, d }));
+      job
+        .then(({ b, d }) => {
           if (!cancelled) {
-            setOps(o);
+            setBuilt(b);
             setDetails(d);
             setQuotedAt(Date.now());
           }
@@ -71,7 +86,8 @@ export function BridgeModal({ src, dst, amount, onClose }: { src: FreeRouteToken
       cancelled = true;
       clearInterval(id);
     };
-  }, [michelsonAddress, src, dst, amount, slippageBps]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [payer, aw.kind, src, dst, amount, slippageBps]);
 
   // 1s tick for the "updating in Ns" countdown
   const [now, setNow] = useState(() => Date.now());
@@ -83,13 +99,52 @@ export function BridgeModal({ src, dst, amount, onClose }: { src: FreeRouteToken
 
   const bal = isXtz(src.address) ? xtz ?? 0n : erc[src.address] ?? 0n;
   const enough = bal >= amount;
-  const landing = isXtz(dst.address) ? 'auto-forwards to your Michelson address' : 'received on your EVM alias';
+  // where the input is debited from / where the output lands — the token's holder on the active wallet side.
+  // MetaMask: everything on the evm account. Temple: native XTZ on the michelson account, ERC20s on the evm alias.
+  const source =
+    aw.kind === 'metamask'
+      ? 'from evm account'
+      : isXtz(src.address)
+        ? 'from michelson account'
+        : 'from evm alias';
+  const landing =
+    aw.kind === 'metamask'
+      ? 'to evm account'
+      : isXtz(dst.address)
+        ? 'to michelson account (auto-forward)'
+        : 'to evm alias';
 
   async function confirm() {
-    if (!tezos || !ops || !michelsonAddress || !aliasAddress || !details) return;
+    if (!built || !details) return;
     setBusy(true);
     setErr(null);
     try {
+      // MetaMask (EVM): send the EvmTxRequest batch; the output lands on the EVM account (no Michelson receipt).
+      if (built.kind === 'metamask') {
+        const acct = aw.evm.evmAddress;
+        if (!acct) return;
+        // snapshot EVM-side balances BEFORE so the receipt is measured (mirror of the Michelson path).
+        // native XTZ is read in WEI so the receipt can isolate the swap amount without sub-mutez rounding noise.
+        const before = {
+          native: await fetchEvmXtzBalanceWei(acct),
+          src: isXtz(src.address) ? 0n : await fetchErc20Balance(src.address, acct),
+          dst: isXtz(dst.address) ? 0n : await fetchErc20Balance(dst.address, acct),
+        };
+        const { hashes } = await aw.evm.sendCalls(built.txs, (i) => setSigningIndex(i));
+        setSigningIndex(null);
+        setFinalizing(true);
+        refresh();
+        try {
+          const r = await buildEvmSwapReceipt({ hashes, stepLabels: details.steps.map((s) => s.kind), account: acct, src, dst, quotedPay: details.payAmount, minOut: details.minOut, before });
+          addSwap(r);
+          setReceipt(r);
+        } catch {
+          setDone({ hashes, evm: true }); // measured receipt unavailable — fall back to the link
+        }
+        return;
+      }
+      // Temple (Michelson): sign the op-group, then build the measured on-chain receipt.
+      if (!tezos || !michelsonAddress || !aliasAddress) return;
       // snapshot real balances BEFORE (live node reads) so the receipt is measured, not estimated
       const [bxtz, bsrc, bdst] = await Promise.all([
         fetchXtzBalance(michelsonAddress),
@@ -97,7 +152,7 @@ export function BridgeModal({ src, dst, amount, onClose }: { src: FreeRouteToken
         isXtz(dst.address) ? Promise.resolve(0n) : fetchErc20Balance(dst.address, aliasAddress),
       ]);
       const before = { xtz: bxtz, src: isXtz(src.address) ? bxtz : bsrc, dst: isXtz(dst.address) ? bxtz : bdst };
-      const hash = await sendWalletGroup(tezos, ops);
+      const hash = await sendWalletGroup(tezos, built.ops);
       setFinalizing(true);
       refresh();
       try {
@@ -105,17 +160,28 @@ export function BridgeModal({ src, dst, amount, onClose }: { src: FreeRouteToken
         addSwap(r); // record in the activity log
         setReceipt(r);
       } catch {
-        onClose(); // receipt unavailable (indexer lag) — the swap itself still succeeded
+        setDone({ hashes: [hash], evm: false }); // receipt unavailable (indexer lag) — the swap itself still succeeded
       }
     } catch (e) {
-      setErr((e as Error).message);
+      setErr(txErrorMessage(e));
     } finally {
       setBusy(false);
       setFinalizing(false);
+      setSigningIndex(null);
     }
   }
 
   if (receipt) return <SwapReceiptModal receipt={receipt} onClose={onClose} />;
+  if (done)
+    return (
+      <SubmittedModal
+        title="Swap submitted"
+        note={done.evm ? 'Confirmed on-chain. Output landed on your evm account.' : 'Confirmed on-chain. The measured receipt wasn’t ready yet (indexer lag) — balances refresh shortly.'}
+        hashes={done.hashes}
+        evm={done.evm}
+        onClose={onClose}
+      />
+    );
 
   return (
     <div className="fixed inset-0 z-30 grid place-items-center bg-black/60 p-4" onClick={onClose}>
@@ -189,12 +255,15 @@ export function BridgeModal({ src, dst, amount, onClose }: { src: FreeRouteToken
                 {/* You pay */}
                 <div className="rounded-lg border border-edge p-2.5">
                   <div className="label mb-1.5">You pay</div>
-                  <div className="flex items-center justify-between">
+                  <div className="flex items-start justify-between">
                     <span className="text-slate-400">
                       Amount <span className="text-[10px] uppercase tracking-wide text-slate-600">exact</span>
                     </span>
-                    <span className="font-mono">
-                      {fmtUnits(details.payAmount, src.decimals, src.decimals)} {src.symbol}
+                    <span className="text-right font-mono">
+                      <span className="block">
+                        {fmtUnits(details.payAmount, src.decimals, src.decimals)} {src.symbol}
+                      </span>
+                      <span className="block text-[11px] text-slate-600">{source}</span>
                     </span>
                   </div>
                 </div>
@@ -217,15 +286,28 @@ export function BridgeModal({ src, dst, amount, onClose }: { src: FreeRouteToken
                   </div>
                 </div>
 
-                {/* steps */}
+                {/* steps — FROM → operation → TO notation */}
                 <div className="rounded-lg border border-edge p-2.5">
-                  <div className="label mb-1.5">One signature · atomic op-group</div>
+                  <div className="label mb-1">
+                    {aw.kind !== 'metamask'
+                      ? 'One signature · atomic op-group'
+                      : aw.evm.atomicBatch
+                        ? '1 signature · atomic batch'
+                        : `${details.steps.length} signature${details.steps.length > 1 ? 's' : ''} · sign one by one`}
+                  </div>
+                  <div className="mb-2 text-[11px] text-slate-500">
+                    Signed by{' '}
+                    {aw.kind === 'metamask'
+                      ? `evm account · ${short(aw.evm.evmAddress ?? '')}`
+                      : `michelson account · ${short(michelsonAddress ?? '')}`}
+                  </div>
                   <ol className="space-y-1 text-xs text-slate-400">
                     {details.steps.map((s, i) => (
-                      <li key={i} className="flex gap-2">
-                        <span className="w-3 shrink-0 text-right tabular-nums text-slate-600">{i + 1}.</span>
-                        <span>
-                          <span className="text-slate-300">{s.kind}</span> — {s.detail}
+                      <li key={i} className={`flex gap-2 ${signingIndex === i ? 'text-accent' : ''}`}>
+                        <span className="w-3 shrink-0 text-right tabular-nums text-slate-600">{signingIndex === i ? '➤' : `${i + 1}.`}</span>
+                        <span className={`font-mono ${signingIndex === i ? 'text-accent' : 'text-slate-300'}`}>
+                          {s.detail}
+                          {signingIndex === i && <span className="ml-1.5 font-sans text-[10px] uppercase tracking-wide text-accent">signing…</span>}
                         </span>
                       </li>
                     ))}
@@ -254,8 +336,14 @@ export function BridgeModal({ src, dst, amount, onClose }: { src: FreeRouteToken
           <button className="btn-ghost" onClick={onClose} disabled={busy}>
             Cancel
           </button>
-          <button className="btn-primary" onClick={() => void confirm()} disabled={!ops || busy || quoting || !enough}>
-            {busy ? (finalizing ? 'Finalizing…' : 'Signing…') : `Swap → ${dst.symbol}`}
+          <button className="btn-primary" onClick={() => void confirm()} disabled={!built || busy || quoting || !enough}>
+            {busy
+              ? finalizing
+                ? 'Finalizing…'
+                : signingIndex !== null && details
+                  ? `Sign ${signingIndex + 1}/${details.steps.length}…`
+                  : 'Signing…'
+              : `Swap → ${dst.symbol}`}
           </button>
         </div>
       </div>
