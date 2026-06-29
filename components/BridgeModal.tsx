@@ -73,9 +73,11 @@ export function BridgeModal({ src, dst, amount, onClose }: { src: FreeRouteToken
   // EVM address that runs the swap: the connected 0x (MetaMask) or the Michelson account's alias (Temple).
   const payer = aw.kind === 'metamask' ? aw.evm.evmAddress : michelsonAddress;
 
-  // (re)quote on slippage change, and auto-refresh every 30s
+  // (re)quote on slippage change, and auto-refresh every 30s.
+  // While a signature/confirmation is in flight (`busy`) we FREEZE: the exact tx is already in the wallet, so
+  // re-quoting would drift the on-screen numbers away from what's being signed. Resumes when signing settles.
   useEffect(() => {
-    if (!payer) return;
+    if (!payer || busy || receipt || done) return;
     let cancelled = false;
     const requote = () => {
       setQuoting(true);
@@ -108,7 +110,7 @@ export function BridgeModal({ src, dst, amount, onClose }: { src: FreeRouteToken
       clearInterval(id);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [payer, aw.kind, src, dst, amount, slippageBps, receiver]);
+  }, [payer, aw.kind, src, dst, amount, slippageBps, receiver, busy, receipt, done]);
 
   // 1s tick for the "updating in Ns" countdown
   const [now, setNow] = useState(() => Date.now());
@@ -246,18 +248,20 @@ export function BridgeModal({ src, dst, amount, onClose }: { src: FreeRouteToken
                   setSlippageBps(s.bps);
                   setCustomSlippage('');
                 }}
-                className={`chip ${!customSlippage && slippageBps === s.bps ? 'border-accent text-accent' : ''}`}
+                disabled={busy}
+                className={`chip disabled:opacity-50 ${!customSlippage && slippageBps === s.bps ? 'border-accent text-accent' : ''}`}
               >
                 {s.label}
               </button>
             ))}
-            <span className={`chip gap-1 ${customSlippage ? 'border-accent text-accent' : ''}`}>
+            <span className={`chip gap-1 ${busy ? 'opacity-50' : ''} ${customSlippage ? 'border-accent text-accent' : ''}`}>
               <input
                 type="number"
                 step="0.1"
                 min={MIN_SLIPPAGE_BPS / 100}
                 max={MAX_SLIPPAGE_BPS / 100}
                 placeholder="custom"
+                disabled={busy}
                 value={customSlippage}
                 onChange={(e) => {
                   const raw = e.target.value;
@@ -279,7 +283,7 @@ export function BridgeModal({ src, dst, amount, onClose }: { src: FreeRouteToken
           </div>
           {slippageBps > 500 && <p className="mt-1.5 text-[11px] text-amber-400">High slippage — you may overpay.</p>}
           {slippageBps < 10 && <p className="mt-1.5 text-[11px] text-amber-400">Very low — the swap may revert on a thin pool.</p>}
-          <p className="mt-1.5 text-[11px] text-slate-500">quote via free-route{refreshInSec !== null ? ` · updating in ${refreshInSec}s` : ''}</p>
+          <p className="mt-1.5 text-[11px] text-slate-500">quote via free-route{busy ? ' · frozen while signing' : refreshInSec !== null ? ` · updating in ${refreshInSec}s` : ''}</p>
         </div>
 
         {/* review */}
@@ -329,14 +333,16 @@ export function BridgeModal({ src, dst, amount, onClose }: { src: FreeRouteToken
                     <button
                       type="button"
                       onClick={() => setRecipientMode('me')}
-                      className={`chip ${recipientMode === 'me' ? 'border-accent text-accent' : ''}`}
+                      disabled={busy}
+                      className={`chip disabled:opacity-50 ${recipientMode === 'me' ? 'border-accent text-accent' : ''}`}
                     >
                       To me
                     </button>
                     <button
                       type="button"
                       onClick={() => setRecipientMode('other')}
-                      className={`chip ${recipientMode === 'other' ? 'border-accent text-accent' : ''}`}
+                      disabled={busy}
+                      className={`chip disabled:opacity-50 ${recipientMode === 'other' ? 'border-accent text-accent' : ''}`}
                     >
                       Another address
                     </button>
@@ -346,10 +352,11 @@ export function BridgeModal({ src, dst, amount, onClose }: { src: FreeRouteToken
                   ) : (
                     <>
                       <input
-                        className={`input mt-2 font-mono text-xs ${recipientError ? 'border-rose-400/60' : ''}`}
+                        className={`input mt-2 font-mono text-xs disabled:opacity-50 ${recipientError ? 'border-rose-400/60' : ''}`}
                         placeholder="0x… EVM address"
                         value={recipientInput}
                         onChange={(e) => setRecipientInput(e.target.value)}
+                        disabled={busy}
                         spellCheck={false}
                         autoFocus
                       />
