@@ -137,6 +137,9 @@ export function BridgeModal({ src, dst, amount, onClose }: { src: FreeRouteToken
       : isXtz(dst.address)
         ? 'michelson account (auto-forward)'
         : 'evm alias';
+  // its address, for the "To me" hint (mirrors Buy): MetaMask → the 0x account · Temple → the tz1 for native XTZ
+  // (auto-forward) or the evm alias for ERC20s
+  const selfLandingAddr = aw.kind === 'metamask' ? aw.evm.evmAddress : isXtz(dst.address) ? michelsonAddress : aliasAddress;
   const landing = receiver ? `to ${short(receiver, 6)}` : `to ${selfLanding}`;
 
   async function confirm() {
@@ -347,7 +350,10 @@ export function BridgeModal({ src, dst, amount, onClose }: { src: FreeRouteToken
                     </button>
                   </div>
                   {recipientMode === 'me' ? (
-                    <p className="mt-1.5 text-[11px] text-slate-600">Output lands on your {selfLanding}.</p>
+                    <p className="mt-1.5 text-[11px] text-slate-600">
+                      Output lands on your {selfLanding}
+                      {selfLandingAddr && <span className="ml-1 font-mono text-slate-500">{short(selfLandingAddr, 8)}</span>}.
+                    </p>
                   ) : (
                     <>
                       <input
@@ -377,18 +383,12 @@ export function BridgeModal({ src, dst, amount, onClose }: { src: FreeRouteToken
 
                 {/* steps — FROM → operation → TO notation */}
                 <div className="rounded-lg border border-edge p-2.5">
-                  <div className="label mb-1">
+                  <div className="label mb-2">
                     {aw.kind !== 'metamask'
                       ? 'One signature · atomic op-group'
                       : aw.evm.atomicBatch
                         ? '1 signature · atomic batch'
                         : `${details.steps.length} signature${details.steps.length > 1 ? 's' : ''} · sign one by one`}
-                  </div>
-                  <div className="mb-2 text-[11px] text-slate-500">
-                    Signed by{' '}
-                    {aw.kind === 'metamask'
-                      ? `evm account · ${short(aw.evm.evmAddress ?? '')}`
-                      : `michelson account · ${short(michelsonAddress ?? '')}`}
                   </div>
                   <ol className="space-y-1 text-xs text-slate-400">
                     {details.steps.map((s, i) => (

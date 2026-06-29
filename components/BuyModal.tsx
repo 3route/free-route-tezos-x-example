@@ -407,19 +407,12 @@ export function BuyModal({ listing, onClose }: { listing: Listing; onClose: () =
 
               {/* steps — FROM → operation → TO notation */}
               <div className="rounded-lg border border-edge p-2.5">
-                <div className="mb-2 flex items-baseline justify-between gap-2">
-                  <span className="label">
-                    {aw.kind !== 'metamask'
-                      ? 'One signature · atomic op-group'
-                      : aw.evm.atomicBatch
-                        ? '1 signature · atomic batch'
-                        : `${details.steps.length} signature${details.steps.length > 1 ? 's' : ''} · sign one by one`}
-                  </span>
-                  <span className="shrink-0 text-[11px] text-slate-500">
-                    {aw.kind === 'metamask'
-                      ? `evm account · ${short(aw.evm.evmAddress ?? '')}`
-                      : `michelson account · ${short(michelsonAddress ?? '')}`}
-                  </span>
+                <div className="label mb-2">
+                  {aw.kind !== 'metamask'
+                    ? 'One signature · atomic op-group'
+                    : aw.evm.atomicBatch
+                      ? '1 signature · atomic batch'
+                      : `${details.steps.length} signature${details.steps.length > 1 ? 's' : ''} · sign one by one`}
                 </div>
                 <ol className="space-y-1 text-xs text-slate-400">
                   {details.steps.map((s, i) => (

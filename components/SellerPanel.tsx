@@ -165,21 +165,24 @@ export function SellerPanel() {
           )}
         </div>
         {connected &&
-          (aw.kind === 'metamask' ? (
-            aw.evm.atomicBatch ? (
-              <p className="mt-3 text-xs text-amber-400/80">
-                Signed as <span className="font-medium">one atomic batch</span> — {rows.length * 3} ops (mint + approve + list per NFT). NFTs mint to your michelson alias.
+          (() => {
+            // one unified phrasing for every signing shape: "Signed as <shape> … NFTs mint to your <holder>."
+            const n = rows.length * 3;
+            const evm = aw.kind === 'metamask';
+            const holder = evm ? 'michelson alias' : 'michelson account'; // MetaMask mints to the KT1 alias, Temple to the tz1
+            const shape = !evm ? 'one atomic op-group' : aw.evm.atomicBatch ? 'one atomic batch' : `${n} transactions`;
+            const detail = !evm
+              ? ` — ${n} ops (mint + approve + list per NFT), auto-chunked under the gas ceiling`
+              : aw.evm.atomicBatch
+                ? ` — ${n} ops (mint + approve + list per NFT)`
+                : ' (mint + approve + list per NFT), one by one';
+            return (
+              <p className="mt-3 text-xs text-slate-500">
+                Signed as <span className="font-medium">{shape}</span>
+                {detail}. NFTs mint to your {holder}.
               </p>
-            ) : (
-              <p className="mt-3 text-xs text-amber-400/80">
-                You’ll sign <span className="font-medium">{rows.length * 3}</span> txs — mint + approve + list per NFT. NFTs mint to your michelson alias.
-              </p>
-            )
-          ) : (
-            <p className="mt-3 text-xs text-slate-500">
-              Temple signs <span className="font-medium">one atomic op-group</span> (auto-chunked under the gas ceiling). NFTs mint to your michelson account.
-            </p>
-          ))}
+            );
+          })()}
         {connected &&
           (() => {
             const ops =
@@ -200,13 +203,7 @@ export function SellerPanel() {
             const nftTotal = signing ? Math.ceil(signing.total / 3) : rows.length;
             return (
               <div className="mt-3 rounded-lg border border-edge p-2.5 text-xs">
-                <div className="label mb-1">Per NFT · {rows.length} × 3 ops</div>
-                <div className="mb-2 text-[11px] text-slate-500">
-                  Signed by{' '}
-                  {aw.kind === 'metamask'
-                    ? `evm account · ${short(aw.evm.evmAddress ?? '')}`
-                    : `michelson account · ${short(aw.temple.michelsonAddress ?? '')}`}
-                </div>
+                <div className="label mb-2">Per NFT · {rows.length} × 3 ops</div>
                 <ol className="space-y-1 font-mono text-slate-300">
                   {ops.map((line, idx) => (
                     <li key={idx} className={`flex gap-2 ${activeOp === idx ? 'text-accent' : ''}`}>
