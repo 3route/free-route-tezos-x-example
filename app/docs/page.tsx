@@ -86,6 +86,7 @@ const fulfill = objkt.buildMichelsonFulfillAskOperation({
   askId: '1',
   editions: 1,
   amountMutez: priceMutez,
+  // recipient: 'tz1… | KT1…', // optional: send the NFT to another Michelson address (objkt proxy_for)
 });
 
 const ops = buildBatchTransaction(swapOps, fulfill);
@@ -126,7 +127,7 @@ const swap = await freeRoute.getSwap({
   amount: swapAmount,
   isExactOut: false,
   from: alias,
-  receiver: alias,
+  receiver: alias, // optional: any EVM 0x address — the swap output lands here (defaults to the sender)
   slippageBps,
 });
 
@@ -197,6 +198,7 @@ const fulfill = objkt.buildEvmFulfillAskTransaction({
   askId: '1',
   editions: 1,
   amountMutez: priceMutez,
+  // recipient: 'tz1… | KT1…', // optional: send the NFT to another Michelson address (objkt proxy_for)
 });
 
 // EIP-5792 batch where supported; otherwise send sequentially (this previewnet). NFT lands on buyerAlias.
@@ -272,14 +274,14 @@ const PAGES: PageDoc[] = [
     title: 'Buyer',
     href: '/buyer',
     blurb:
-      'Pay any EVM ERC20 for an XTZ-priced objkt NFT — swap to XTZ, then fulfill the ask, composed into one signed batch. From Temple it’s a single-signature Michelson op-group; from MetaMask, an EVM tx batch that reaches objkt via callMichelson.',
+      'Pay any EVM ERC20 for an XTZ-priced objkt NFT — swap to XTZ, then fulfill the ask, composed into one signed batch. From Temple it’s a single-signature Michelson op-group; from MetaMask, an EVM tx batch that reaches objkt via callMichelson. The NFT goes to the signer by default, or to any Michelson address you pass as the objkt proxy_for (the optional recipient).',
     code: BUYER_CODE,
   },
   {
     title: 'Bridge',
     href: '/bridge',
     blurb:
-      'A standalone swap of any token to any token (XTZ ↔ ERC20, ERC20 ↔ ERC20), exact-input. The same builders as the buy, minus the marketplace op.',
+      'A standalone swap of any token to any token (XTZ ↔ ERC20, ERC20 ↔ ERC20), exact-input. The same builders as the buy, minus the marketplace op. The output lands on the signer by default, or on any EVM address you pass as the receiver.',
     code: BRIDGE_CODE,
   },
   {
@@ -291,7 +293,8 @@ const PAGES: PageDoc[] = [
   {
     title: 'My NFTs',
     href: '/owned',
-    blurb: 'A read-only view of the NFTs the connected Michelson address owns from the test collection — confirms a completed buy.',
+    blurb:
+      'A read-only view of the NFTs owned by the connected wallet’s Michelson holder — your tz1 (Temple) or the account’s KT1 alias (MetaMask) — from the test collection. Confirms a completed buy.',
   },
 ];
 
