@@ -256,19 +256,18 @@ export function BridgeModal({ src, dst, amount, onClose }: { src: FreeRouteToken
             ))}
             <span className={`chip gap-1 ${busy ? 'opacity-50' : ''} ${customSlippage ? 'border-accent text-accent' : ''}`}>
               <input
-                type="number"
-                step="0.1"
-                min={MIN_SLIPPAGE_BPS / 100}
-                max={MAX_SLIPPAGE_BPS / 100}
+                type="text"
+                inputMode="decimal"
                 placeholder="custom"
                 disabled={busy}
                 value={customSlippage}
                 onChange={(e) => {
-                  const raw = e.target.value;
+                  const raw = e.target.value.replace(',', '.'); // locale-independent: always a dot separator
                   if (raw === '') {
                     setCustomSlippage('');
                     return;
                   }
+                  if (!/^\d*\.?\d*$/.test(raw)) return; // digits and a single dot only
                   let pct = Number(raw);
                   if (!Number.isFinite(pct) || pct < 0) return;
                   const maxPct = MAX_SLIPPAGE_BPS / 100;
@@ -276,7 +275,7 @@ export function BridgeModal({ src, dst, amount, onClose }: { src: FreeRouteToken
                   setCustomSlippage(text);
                   setSlippageBps(Math.min(MAX_SLIPPAGE_BPS, Math.max(MIN_SLIPPAGE_BPS, Math.round(pct * 100))));
                 }}
-                className="w-14 bg-transparent text-right outline-hidden [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none"
+                className="w-14 bg-transparent text-right outline-hidden"
               />
               %
             </span>

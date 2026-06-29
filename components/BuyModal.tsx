@@ -280,19 +280,18 @@ export function BuyModal({ listing, onClose }: { listing: Listing; onClose: () =
             ))}
             <span className={`chip gap-1 ${buying ? 'opacity-50' : ''} ${customSlippage ? 'border-accent text-accent' : ''}`}>
               <input
-                type="number"
-                step="0.1"
-                min={MIN_SLIPPAGE_BPS / 100}
-                max={MAX_SLIPPAGE_BPS / 100}
+                type="text"
+                inputMode="decimal"
                 placeholder="custom"
                 disabled={buying}
                 value={customSlippage}
                 onChange={(e) => {
-                  const raw = e.target.value;
+                  const raw = e.target.value.replace(',', '.'); // locale-independent: always a dot separator
                   if (raw === '') {
                     setCustomSlippage('');
                     return;
                   }
+                  if (!/^\d*\.?\d*$/.test(raw)) return; // digits and a single dot only
                   let pct = Number(raw);
                   if (!Number.isFinite(pct) || pct < 0) return; // ignore non-numeric / negative
                   const maxPct = MAX_SLIPPAGE_BPS / 100;
@@ -301,7 +300,7 @@ export function BuyModal({ listing, onClose }: { listing: Listing; onClose: () =
                   setCustomSlippage(text);
                   setSlippageBps(Math.min(MAX_SLIPPAGE_BPS, Math.max(MIN_SLIPPAGE_BPS, Math.round(pct * 100))));
                 }}
-                className="w-14 bg-transparent text-right outline-hidden [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none"
+                className="w-14 bg-transparent text-right outline-hidden"
               />
               %
             </span>

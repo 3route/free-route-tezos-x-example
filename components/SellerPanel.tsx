@@ -9,6 +9,7 @@ import { txErrorMessage } from '@/lib/errors';
 import { nftName } from '@/lib/names';
 import { short } from '@/lib/format';
 import { NftArt } from './NftArt';
+import { DecimalInput } from './DecimalInput';
 import { ConnectButton } from './ConnectButton';
 import { MintReceiptModal } from './MintReceiptModal';
 import { useHistory } from '@/lib/history';
@@ -141,14 +142,10 @@ export function SellerPanel() {
           </div>
           <div>
             <div className="label mb-1">Default price (XTZ)</div>
-            <input
-              type="number"
-              step="0.001"
-              min={0}
+            <DecimalInput
               className="input w-32"
-              defaultValue={DEFAULT_PRICE}
-              onChange={(e) => {
-                const p = Number(e.target.value) || 0;
+              value={defaultPrice}
+              onChange={(p) => {
                 setDefaultPrice(p); // remembered so a later count change reuses it
                 setAllPrices(p);
               }}
@@ -244,14 +241,7 @@ export function SellerPanel() {
             <div className="truncate text-sm font-medium">{r.name}</div>
             <div className="mb-2 font-mono text-[11px] text-slate-500">#{short(String(r.tokenId), 5)}</div>
             <div className="label mb-1">Price (XTZ)</div>
-            <input
-              type="number"
-              step="0.001"
-              min={0}
-              className="input"
-              value={r.priceXtz}
-              onChange={(e) => setPrice(r.tokenId, Number(e.target.value) || 0)}
-            />
+            <DecimalInput className="input" value={r.priceXtz} onChange={(p) => setPrice(r.tokenId, p)} />
           </div>
         ))}
       </div>
