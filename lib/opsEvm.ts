@@ -64,7 +64,7 @@ export async function buildEvmBuyBatch(
 
   const expectedOutMutez = Number(fromEvmUnits(swap.dstAmount, XTZ.address));
   const minOutMutez = Number(fromEvmUnits(swap.dstAmountMin, XTZ.address));
-  const nftTo = recipient ? short(recipient, 6) : 'michelson alias'; // where the NFT lands in the notation
+  const nftTo = recipient ? short(recipient, 6) : 'your michelson alias'; // where the NFT lands in the notation
 
   const details: BuyDetails = {
     askId: ask.askId,
@@ -79,7 +79,7 @@ export async function buildEvmBuyBatch(
     router: swap.tx.to,
     steps: [
       ...approveSteps(approval, srcAmount, payToken),
-      { kind: 'swap', detail: 'router.swap() —XTZ→ evm account' },
+      { kind: 'swap', detail: 'router.swap() —XTZ→ your evm account' },
       { kind: 'fulfill_ask', detail: `callMichelson(fulfill_ask()) —NFT→ ${nftTo}` },
     ],
   };
@@ -122,7 +122,7 @@ export async function buildEvmSwapBatch(
     slippageBps,
     router: swap.tx.to,
     approval,
-    steps: [...approveSteps(approval, swap.srcAmount, src), { kind: 'swap', detail: `router.swap() —${dst.symbol}→ ${receiver ? short(receiver, 6) : 'evm account'}` }],
+    steps: [...approveSteps(approval, swap.srcAmount, src), { kind: 'swap', detail: `router.swap() —${dst.symbol}→ ${receiver ? short(receiver, 6) : 'your evm account'}` }],
   };
   return { txs, details };
 }

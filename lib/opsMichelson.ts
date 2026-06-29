@@ -188,7 +188,7 @@ export async function buildBuyBatch(
 
   const expectedOutMutez = Number(fromEvmUnits(swap.dstAmount, XTZ.address));
   const minOutMutez = Number(fromEvmUnits(swap.dstAmountMin, XTZ.address)); // == price after our sizing
-  const nftTo = recipient ? short(recipient, 6) : 'michelson account'; // where the NFT lands in the notation
+  const nftTo = recipient ? short(recipient, 6) : 'your michelson account'; // where the NFT lands in the notation
 
   const details: BuyDetails = {
     askId: ask.askId,
@@ -205,7 +205,7 @@ export async function buildBuyBatch(
     // to the tz1), then the native objkt fulfill that the bridged XTZ pays for.
     steps: [
       ...approveSteps(approval, srcAmount, payToken),
-      { kind: 'swap', detail: 'call_evm(router.swap()) —XTZ→ michelson account' },
+      { kind: 'swap', detail: 'call_evm(router.swap()) —XTZ→ your michelson account' },
       { kind: 'fulfill_ask', detail: `objkt.fulfill_ask() —NFT→ ${nftTo}` },
     ],
   };
@@ -270,7 +270,7 @@ export async function buildSwapBatch(
       router: swap.tx.to,
       approval,
       // mirrors the ACTUAL ops (1 / 2 / 3, by approval mode); the swap output lands on the dst token's holder.
-      steps: [...approveSteps(approval, payAmount, src), { kind: 'swap', detail: `call_evm(router.swap()) —${dst.symbol}→ ${receiver ? short(receiver, 6) : holderOf(dst)}` }],
+      steps: [...approveSteps(approval, payAmount, src), { kind: 'swap', detail: `call_evm(router.swap()) —${dst.symbol}→ ${receiver ? short(receiver, 6) : `your ${holderOf(dst)}`}` }],
     },
   };
 }

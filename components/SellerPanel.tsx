@@ -188,12 +188,12 @@ export function SellerPanel() {
             const ops =
               aw.kind === 'metamask'
                 ? [
-                    'callMichelson(fa2.mint()) —NFT→ michelson alias',
+                    'callMichelson(fa2.mint()) —NFT→ your michelson alias',
                     'callMichelson(fa2.update_operators(objkt))',
                     'callMichelson(objkt.ask())',
                   ]
                 : [
-                    'fa2.mint() —NFT→ michelson account',
+                    'fa2.mint() —NFT→ your michelson account',
                     'fa2.update_operators(objkt)',
                     'objkt.ask()',
                   ];
