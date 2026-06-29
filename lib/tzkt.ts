@@ -51,6 +51,35 @@ export async function fetchXtzBalance(michelsonAddress: string): Promise<bigint>
   return BigInt(b as string);
 }
 
+// Native XTZ on the EVM side (the MetaMask account's gas balance), in raw 18-dec wei.
+export async function fetchEvmXtzBalanceWei(evmAddress: string): Promise<bigint> {
+  return getEvmProvider().getBalance(evmAddress);
+}
+
+// Native XTZ on the EVM side, normalized to mutez (18-dec wei -> 6-dec mutez). For exact reconciliation the
+// receipt builders read wei (fetchEvmXtzBalanceWei) and convert once; this rounded helper is for the UI balances.
+export async function fetchEvmXtzBalance(evmAddress: string): Promise<bigint> {
+  return (await fetchEvmXtzBalanceWei(evmAddress)) / 1_000_000_000_000n;
+}
+
+// Total gas fee paid across a set of EVM txs = Σ gasUsed × gasPrice, in raw 18-dec wei.
+// Throws if a receipt isn't available yet (the EVM-receipt builder catches → falls back to the link-only modal).
+export async function fetchEvmTxFeeWei(hashes: string[]): Promise<bigint> {
+  const p = getEvmProvider();
+  let wei = 0n;
+  for (const h of hashes) {
+    const r = await p.getTransactionReceipt(h);
+    if (!r) throw new Error(`receipt not available for ${h}`);
+    wei += r.gasUsed * (r.gasPrice ?? 0n);
+  }
+  return wei;
+}
+
+// Same total gas fee, normalized to mutez.
+export async function fetchEvmTxFeeMutez(hashes: string[]): Promise<bigint> {
+  return (await fetchEvmTxFeeWei(hashes)) / 1_000_000_000_000n;
+}
+
 export async function fetchOwner(tokenId: string): Promise<string | null> {
   const k = (await fetch(`${CFG.tzktApi}/contracts/${CFG.fa2}/bigmaps/ledger/keys?key=${tokenId}`).then((r) => r.json()).catch(() => [])) as Array<{ value?: string }>;
   return k[0]?.value ?? null;

@@ -1,9 +1,17 @@
-// Operation builders — the dApp's use of the pure-SDK. Mirrors sdk/index.ts (buy) and scripts/setup.ts
-// (mint+list), but signed by the connected Temple wallet (tezos.wallet.batch).
+// Operation builders — Michelson / Temple side. The dApp's use of the pure SDK, signed by the connected Temple
+// wallet (tezos.wallet.batch). Mirror of lib/opsEvm.ts (the MetaMask / EVM-native side); both produce the SAME
+// BuyDetails / SwapDetails the review modals render.
+//
+//   SELLER   buildMintListOps  — mint N FA2 tokens + list each as an objkt ask (one op-group, auto-chunked)
+//   BUYER    buildBuyBatch     — pay an ERC20 for an XTZ-priced ask (swap → fulfill), one atomic group
+//   BRIDGE   buildSwapBatch    — swap any token → any token
+//
+// On the Temple side the EVM-runtime ops (approve / swap) run through the `call_evm` gateway AS the account's
+// `evm alias` (a 0x derived from the tz1, holding the ERC20s); native-XTZ swap output auto-forwards back to the
+// tz1 (`michelson account`); the objkt fulfill and FA2 ops are native Michelson, signed by the tz1.
 import { OpKind } from '@taquito/taquito';
 import type { ParamsWithKind, TezosToolkit } from '@taquito/taquito';
 import type { MichelsonV1Expression } from '@taquito/rpc';
-import { CFG } from './config';
 import {
   XTZ,
   buildBatchTransaction,
@@ -17,14 +25,23 @@ import {
   toEvmUnits,
 } from '@baking-bad/free-route-tezos-x';
 import type { ApprovalMode, FreeRouteToken } from '@baking-bad/free-route-tezos-x';
+import { CFG } from './config';
 import { freeRoute } from './freeRoute';
-import { fmtUnits } from './format';
+import { fmtUnits, short } from './format';
 
 const MAX_GAS_PER_BATCH = 2_500_000; // stay safely under the per-op-group ceiling; split if exceeded
 
 // Michelson op builders with our network's call_evm gateway bound in — call .buildSwapOperation without repeating it.
 const michelsonOps = createMichelsonOpsBuilder(CFG.gateway);
 
+// One reviewed step. `kind` is the short op label (also the receipt tx-link label); `detail` is the
+// `operation → TO` notation line shown in the modal (the sender lives in the modal's "Signed by" header).
+export interface Step {
+  kind: string;
+  detail: string;
+}
+
+// ───────────────────────────── Michelson value builders ─────────────────────────────
 const m = {
   string: (s: string): MichelsonV1Expression => ({ string: s }),
   int: (n: number | string): MichelsonV1Expression => ({ int: String(n) }),
@@ -53,19 +70,31 @@ const askValue = (fa2: string, tokenId: number, priceMutez: number, seller: stri
     m.none,
   );
 
-// ---------------- SELLER: mint N tokens + list each as an ask ----------------
+// ───────────────────────────── step notation ─────────────────────────────
+// approve step(s) for the chosen ApprovalMode. On the Temple side the approve runs via `call_evm` as the
+// evm alias against the free-route router; `amount` is the exact allowance granted (consumer units).
+const approveSteps = (approval: ApprovalMode, amount: bigint, token: FreeRouteToken): Step[] => {
+  const approveExact: Step = { kind: 'approve', detail: `call_evm(${token.symbol}.approve(router, ${fmtUnits(amount, token.decimals, token.decimals)}))` };
+  if (approval === 'resetThenApprove') return [{ kind: 'approve', detail: `call_evm(${token.symbol}.approve(router, 0))` }, approveExact];
+  if (approval === 'approve') return [approveExact];
+  return []; // 'none' — native XTZ input (carries msg.value), or the allowance already covers it
+};
+
+// Where a token sits on the Temple side: native XTZ on the tz1 (`michelson account`), ERC20s on the `evm alias`.
+const holderOf = (token: FreeRouteToken) => (isXtz(token.address) ? 'michelson account' : 'evm alias');
+
+// ───────────────────────────── SELLER: mint N tokens + list each as an ask ─────────────────────────────
 export interface SellerItem {
   priceMutez: number;
 }
 
-// One ordered op list: [mint..., update_operators..., ask...]. The FA2 assigns ids from its
-// next_token_id counter, so token ids are positional: the i-th mint gets `baseTokenId + i`
-// (baseTokenId = next_token_id read just before sending). All mints precede the operator/ask ops
-// so the tokens exist first and chunked sends stay valid. objkt pulls the NFT from the seller on
-// fulfill, hence the per-token update_operators approving the marketplace.
-// Note: ids are predicted from baseTokenId — if another account mints into the same FA2 between the
-// read and these ops landing, the predictions shift and the asks would reference the wrong tokens.
-// Fine for a single-user demo; the real guard is the on-chain counter (ids never collide).
+// One ordered op list: [mint..., update_operators..., ask...]. The FA2 assigns ids from its next_token_id
+// counter, so token ids are positional: the i-th mint gets `baseTokenId + i` (baseTokenId = next_token_id read
+// just before sending). All mints precede the operator/ask ops so the tokens exist first and chunked sends stay
+// valid. objkt pulls the NFT from the seller on fulfill, hence the per-token update_operators approving it.
+// Note: ids are predicted from baseTokenId — if another account mints into the same FA2 between the read and
+// these ops landing, the predictions shift and the asks reference the wrong tokens. Fine for a single-user demo;
+// the on-chain counter is the real guard (ids never collide).
 export function buildMintListOps(seller: string, items: SellerItem[], baseTokenId: number): ParamsWithKind[] {
   const tid = (i: number) => baseTokenId + i;
   const mints: ParamsWithKind[] = items.map(() => ({
@@ -98,19 +127,19 @@ export function buildMintListOps(seller: string, items: SellerItem[], baseTokenI
   return [...mints, ...operators, ...asks];
 }
 
-// ---------------- BUYER: pay an ERC20 for an XTZ-priced ask ----------------
+// ───────────────────────────── BUYER: pay an ERC20 for an XTZ-priced ask ─────────────────────────────
 export interface BuyDetails {
   askId: string;
   tokenId: string;
   priceMutez: number;
   payToken: FreeRouteToken;
-  payAmount: string; // swap.src.amount, base units of payToken — STRICT (calldata is exact-input)
-  expectedOutMutez: number; // swap.dst.expected (mutez) — expected XTZ out
-  minOutMutez: number; // swap.dst.min (mutez) — guaranteed XTZ floor (== price after our sizing)
-  changeMutez: number; // expectedOut - price, returned to the buyer's Michelson address (>= 0)
+  payAmount: string; // swap.srcAmount, base units of payToken — the (max) input for the exact-out swap
+  expectedOutMutez: number; // swap.dstAmount (mutez) — expected XTZ out
+  minOutMutez: number; // swap.dstAmountMin (mutez) — guaranteed XTZ floor (== price after our sizing)
+  changeMutez: number; // expectedOut - price, the surplus returned to the buyer (>= 0)
   slippageBps: number;
   router: string;
-  steps: Array<{ kind: string; detail: string }>;
+  steps: Step[];
 }
 
 export async function buildBuyBatch(
@@ -118,8 +147,9 @@ export async function buildBuyBatch(
   ask: { askId: string; tokenId: string; priceMutez: number },
   payToken: FreeRouteToken,
   slippageBps: number,
+  recipient?: string | null, // Michelson address the NFT goes to (objkt proxy_for); null/undefined = the buyer (tz1)
 ): Promise<{ ops: ParamsWithKind[]; details: BuyDetails }> {
-  const buyerAlias = michelsonToEvmAlias(buyerMichelsonAddress); // EVM identity holding the ERC20
+  const buyerAlias = michelsonToEvmAlias(buyerMichelsonAddress); // the evm alias that holds the ERC20 + runs the swap
 
   // exact-out: size the XTZ out so the on-chain floor still covers the ask price
   // (targetForMinOut / getSwap enforce the 0..5000 bps contract, so no local clamp here)
@@ -146,31 +176,19 @@ export async function buildBuyBatch(
   });
 
   // approve(s) + swap, composed with the objkt fulfill (paid by the bridged XTZ) -> one atomic group
-  const swapOps = michelsonOps.buildSwapOperation({
-    swap,
-    srcAddress: payToken.address,
-    approval,
-  });
+  const swapOps = michelsonOps.buildSwapOperation({ swap, srcAddress: payToken.address, approval });
   const fulfillOp = objkt.buildMichelsonFulfillAskOperation({
     marketplace: CFG.objkt,
     askId: ask.askId,
     editions: 1,
     amountMutez: ask.priceMutez,
+    recipient,
   });
   const ops = buildBatchTransaction(swapOps, fulfillOp);
 
   const expectedOutMutez = Number(fromEvmUnits(swap.dstAmount, XTZ.address));
   const minOutMutez = Number(fromEvmUnits(swap.dstAmountMin, XTZ.address)); // == price after our sizing
-  const changeMutez = Math.max(0, expectedOutMutez - ask.priceMutez);
-
-  // steps mirror the ACTUAL ops (2 / 3 / 4 in the group, depending on the approval mode).
-  const approveExact = { kind: 'approve (call_evm)', detail: `approve exactly ${fmtUnits(srcAmount, payToken.decimals, payToken.decimals)} ${payToken.symbol} to the free-route router` };
-  const approveSteps =
-    approval === 'resetThenApprove'
-      ? [{ kind: 'approve (call_evm)', detail: `reset ${payToken.symbol} allowance to 0 (safe re-approval)` }, approveExact]
-      : approval === 'approve'
-        ? [approveExact]
-        : []; // 'none' — allowance already covers it
+  const nftTo = recipient ? short(recipient, 6) : 'your michelson account'; // where the NFT lands in the notation
 
   const details: BuyDetails = {
     askId: ask.askId,
@@ -180,19 +198,21 @@ export async function buildBuyBatch(
     payAmount: srcAmount.toString(),
     expectedOutMutez,
     minOutMutez,
-    changeMutez,
+    changeMutez: Math.max(0, expectedOutMutez - ask.priceMutez),
     slippageBps,
     router: swap.tx.to,
+    // mirrors the ACTUAL ops (2 / 3 / 4, by approval mode): approve(s) via call_evm, the swap (XTZ auto-forwards
+    // to the tz1), then the native objkt fulfill that the bridged XTZ pays for.
     steps: [
-      ...approveSteps,
-      { kind: 'swap (call_evm)', detail: `${payToken.symbol} → native XTZ to your alias → auto-forwards to your Michelson address` },
-      { kind: 'fulfill_ask', detail: `buy ask#${ask.askId}, pay ${ask.priceMutez / 1e6} XTZ` },
+      ...approveSteps(approval, srcAmount, payToken),
+      { kind: 'swap', detail: 'call_evm(router.swap()) —XTZ→ your michelson account' },
+      { kind: 'fulfill_ask', detail: `objkt.fulfill_ask() —NFT→ ${nftTo}` },
     ],
   };
   return { ops, details };
 }
 
-// ---------------- BRIDGE: swap any token -> any token (XTZ <-> ERC20, ERC20 <-> ERC20) ----------------
+// ───────────────────────────── BRIDGE: swap any token -> any token ─────────────────────────────
 export interface SwapDetails {
   src: FreeRouteToken;
   dst: FreeRouteToken;
@@ -202,7 +222,7 @@ export interface SwapDetails {
   slippageBps: number;
   router: string;
   approval: ApprovalMode; // 'none' for native XTZ input, else allowance-aware
-  steps: Array<{ kind: string; detail: string }>; // the atomic op-group, mirrors the review
+  steps: Step[]; // the atomic op-group, mirrors the review
 }
 
 // exact-input swap signed by the connected wallet. `amount` is src consumer units (mutez for XTZ, base for ERC20).
@@ -212,8 +232,10 @@ export async function buildSwapBatch(
   dst: FreeRouteToken,
   amount: bigint,
   slippageBps: number,
+  receiver?: string | null, // EVM 0x address the output lands on; null/undefined = the account's evm alias
 ): Promise<{ ops: ParamsWithKind[]; details: SwapDetails }> {
-  const accountAlias = michelsonToEvmAlias(account); // EVM identity that runs the swap
+  const accountAlias = michelsonToEvmAlias(account); // the evm alias that runs the swap
+  const out = receiver ?? accountAlias;
 
   // exact-in: any token -> any token (XTZ <-> ERC20, ERC20 <-> ERC20)
   const swapAmount = toEvmUnits(amount, src.address); // to wei for the EVM API
@@ -223,38 +245,18 @@ export async function buildSwapBatch(
     amount: swapAmount,
     isExactOut: false,
     from: accountAlias,
-    receiver: accountAlias,
+    receiver: out,
     slippageBps,
   });
 
   // native XTZ carries value as msg.value (no approve); an ERC20 picks the minimal safe mode (none / approve / reset+approve)
   const approval: ApprovalMode = isXtz(src.address)
     ? 'none'
-    : await resolveApproval({
-        evmRpc: CFG.evmRpc,
-        token: src.address,
-        owner: accountAlias,
-        spender: swap.tx.to,
-        amount: swap.srcAmount,
-      });
+    : await resolveApproval({ evmRpc: CFG.evmRpc, token: src.address, owner: accountAlias, spender: swap.tx.to, amount: swap.srcAmount });
 
-  // approve(s) + swap -> one atomic group; native-XTZ output auto-forwards to your Michelson address
-  const swapOps = michelsonOps.buildSwapOperation({
-    swap,
-    srcAddress: src.address,
-    approval,
-  });
+  // approve(s) + swap -> one atomic group; native-XTZ output auto-forwards to the tz1
+  const swapOps = michelsonOps.buildSwapOperation({ swap, srcAddress: src.address, approval });
   const payAmount = fromEvmUnits(swap.srcAmount, src.address);
-
-  // steps mirror the ACTUAL ops (1 / 2 / 3, depending on the approval mode).
-  const approveExact = { kind: 'approve (call_evm)', detail: `approve exactly ${fmtUnits(payAmount, src.decimals, src.decimals)} ${src.symbol} to the free-route router` };
-  const approveSteps =
-    approval === 'resetThenApprove'
-      ? [{ kind: 'approve (call_evm)', detail: `reset ${src.symbol} allowance to 0 (safe re-approval)` }, approveExact]
-      : approval === 'approve'
-        ? [approveExact]
-        : []; // 'none' — native XTZ input (carries msg.value), or allowance already covers it
-  const landing = isXtz(dst.address) ? 'auto-forwards to your Michelson address' : 'received on your EVM alias';
 
   return {
     ops: swapOps,
@@ -267,11 +269,13 @@ export async function buildSwapBatch(
       slippageBps,
       router: swap.tx.to,
       approval,
-      steps: [...approveSteps, { kind: 'swap (call_evm)', detail: `${src.symbol} → ${dst.symbol} · ${landing}` }],
+      // mirrors the ACTUAL ops (1 / 2 / 3, by approval mode); the swap output lands on the dst token's holder.
+      steps: [...approveSteps(approval, payAmount, src), { kind: 'swap', detail: `call_evm(router.swap()) —${dst.symbol}→ ${receiver ? short(receiver, 6) : `your ${holderOf(dst)}`}` }],
     },
   };
 }
 
+// ───────────────────────────── send ─────────────────────────────
 // Send a prepared op group as ONE atomic wallet batch (the buy must stay atomic — never chunked).
 export async function sendWalletGroup(tezos: TezosToolkit, ops: ParamsWithKind[]): Promise<string> {
   const op = await tezos.wallet.batch().with(ops as never).send();
@@ -279,8 +283,12 @@ export async function sendWalletGroup(tezos: TezosToolkit, ops: ParamsWithKind[]
   return op.opHash;
 }
 
-// ---------------- send (chunked under the gas ceiling), via the wallet ----------------
-export async function sendChunked(tezos: TezosToolkit, ops: ParamsWithKind[], onHash?: (hash: string, idx: number, total: number) => void): Promise<string[]> {
+// Send a (potentially large) op list, greedily chunked under the gas ceiling, via the wallet.
+export async function sendChunked(
+  tezos: TezosToolkit,
+  ops: ParamsWithKind[],
+  onHash?: (hash: string, idx: number, total: number) => void,
+): Promise<string[]> {
   // greedy pack preserving order
   const batches: ParamsWithKind[][] = [];
   let cur: ParamsWithKind[] = [];

@@ -1,5 +1,5 @@
 'use client';
-import { fmtUnits } from '@/lib/format';
+import { fmtUnits, short } from '@/lib/format';
 import { isXtz } from '@baking-bad/free-route-tezos-x';
 import { CFG } from '@/lib/config';
 import type { SwapReceipt } from '@/lib/receipt';
@@ -32,7 +32,7 @@ export function SwapReceiptModal({ receipt: r, onClose }: { receipt: SwapReceipt
   const srcXtz = isXtz(src.address);
   const dstXtz = isXtz(dst.address);
   // op fee is paid in XTZ — show it on whichever side is XTZ so that box reconciles (ERC20↔ERC20: its own line).
-  const feeLine = <Line label="Network fee" sub="actual paid fee · Σ bakerFee" value={`−${fmtUnits(r.networkFee, 6, 6)} XTZ`} tone="muted" />;
+  const feeLine = <Line label="Network fee" sub={r.evm ? 'EVM gas · Σ gasUsed×gasPrice' : 'actual paid fee · Σ bakerFee'} value={`−${fmtUnits(r.networkFee, 6, 6)} XTZ`} tone="muted" />;
   return (
     <div className="fixed inset-0 z-30 grid place-items-center bg-black/60 p-4" onClick={onClose}>
       <div className="card max-h-[90vh] w-full max-w-lg overflow-y-auto" onClick={(e) => e.stopPropagation()}>
@@ -41,12 +41,25 @@ export function SwapReceiptModal({ receipt: r, onClose }: { receipt: SwapReceipt
           <div className="grid h-9 w-9 place-items-center rounded-full bg-emerald-500/15 text-lg text-emerald-400">✓</div>
           <div className="min-w-0">
             <div className="font-semibold">Swap complete</div>
-            <div className="truncate text-xs text-slate-500">
-              {src.symbol} → {dst.symbol} ·{' '}
-              <a className="text-accent hover:underline" href={`${CFG.explorer}/${r.opHash}`} target="_blank" rel="noreferrer">
-                view on tzkt ↗
+            <div className="truncate text-xs text-slate-500">{src.symbol} → {dst.symbol}</div>
+            {r.txs?.length ? (
+              <div className="mt-0.5 flex flex-wrap gap-x-2 text-[11px]">
+                {r.txs.map((t) => (
+                  <a key={t.hash} href={`${CFG.evmExplorer}/tx/${t.hash}`} target="_blank" rel="noreferrer" className="text-accent hover:underline" title={t.hash}>
+                    {t.label} ↗
+                  </a>
+                ))}
+              </div>
+            ) : (
+              <a
+                className="text-xs text-accent hover:underline"
+                href={r.evm ? `${CFG.evmExplorer}/tx/${r.opHash}` : `${CFG.explorer}/${r.opHash}`}
+                target="_blank"
+                rel="noreferrer"
+              >
+                view on {r.evm ? 'blockscout' : 'tzkt'} ↗
               </a>
-            </div>
+            )}
           </div>
         </div>
 
@@ -67,7 +80,12 @@ export function SwapReceiptModal({ receipt: r, onClose }: { receipt: SwapReceipt
         <div className="mb-3 rounded-xl border border-edge bg-ink/40 p-3 text-sm">
           <div className="label mb-2">You received</div>
           <div className="space-y-1.5">
-            <Line label={`${dst.symbol} received`} sub={dstXtz ? 'auto-forwarded to your Michelson address' : 'on your EVM alias'} value={`+${amt(r.dstReceived, dst.decimals, dst.symbol)}`} tone="emerald" />
+            <Line
+              label={`${dst.symbol} received`}
+              sub={r.recipient ? `to ${short(r.recipient, 6)}` : r.evm ? 'to evm account' : dstXtz ? 'to michelson account (auto-forward)' : 'to evm alias'}
+              value={`+${amt(r.dstReceived, dst.decimals, dst.symbol)}`}
+              tone="emerald"
+            />
             <div className="flex justify-between font-mono text-xs text-slate-500">
               <span className="font-sans text-slate-600">{dst.symbol} balance</span>
               <span>{fmtUnits(r.dstBefore, dst.decimals, dst.decimals)} → {fmtUnits(r.dstAfter, dst.decimals, dst.decimals)}</span>

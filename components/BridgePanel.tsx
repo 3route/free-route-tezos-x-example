@@ -1,7 +1,7 @@
 'use client';
 import { useEffect, useMemo, useState } from 'react';
 import { useBalances, useTokens } from '@/lib/hooks';
-import { useWallet } from '@/lib/wallet';
+import { useActiveWallet } from '@/lib/account';
 import { useUi } from '@/lib/ui';
 import { XTZ, XTZ_ADDRESS, fromEvmUnits, isXtz, toEvmUnits } from '@baking-bad/free-route-tezos-x';
 import type { FreeRouteToken } from '@baking-bad/free-route-tezos-x';
@@ -9,12 +9,14 @@ import { freeRoute } from '@/lib/freeRoute';
 import { fmtUnits, parseUnits } from '@/lib/format';
 import { CFG } from '@/lib/config';
 import { BridgeModal } from './BridgeModal';
+import { ConnectButton } from './ConnectButton';
 
 const XTZ_FEE_BUFFER = 50_000n; // mutez left for op fees when "Max"-ing an XTZ swap
 const QUOTE_REFRESH_MS = 30_000; // auto-refresh the To preview, like the buy/bridge modal
 
 export function BridgePanel() {
-  const { connected, michelsonAddress, connect } = useWallet();
+  const aw = useActiveWallet();
+  const connected = aw.connected;
   const { payTokens } = useTokens();
   const { xtz, erc } = useBalances();
 
@@ -179,9 +181,7 @@ export function BridgePanel() {
             {samePair ? 'Pick two different tokens' : 'Review swap'}
           </button>
         ) : (
-          <button className="btn-primary w-full" onClick={() => void connect()}>
-            Connect Temple
-          </button>
+          <ConnectButton header="Connect to swap">Review swap</ConnectButton>
         )}
       </div>
 

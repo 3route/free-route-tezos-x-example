@@ -30,7 +30,7 @@ export function Header() {
           <div className="grid h-8 w-8 place-items-center rounded-lg bg-accent/20 text-accent">◈</div>
           <div>
             <div className="text-sm font-semibold leading-tight">3Route Tezos X · SDK demo</div>
-            <div className="text-[11px] text-slate-500">previewnet · one atomic op-group</div>
+            <div className="text-[11px] text-slate-500">buy/sell NFT · swap ERC20/XTZ</div>
           </div>
         </div>
 

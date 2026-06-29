@@ -7,13 +7,13 @@ import type { BuyReceipt, MintReceipt, SwapReceipt } from './receipt';
 import type { FreeRouteToken } from '@baking-bad/free-route-tezos-x';
 
 export type HistoryEntry =
-  | { id: number; ts: number; kind: 'buy'; receipt: BuyReceipt; token: FreeRouteToken; tokenId: string }
+  | { id: number; ts: number; kind: 'buy'; receipt: BuyReceipt; token: FreeRouteToken; tokenId: string; askId: string }
   | { id: number; ts: number; kind: 'swap'; receipt: SwapReceipt }
   | { id: number; ts: number; kind: 'mint'; receipt: MintReceipt };
 
 interface HistoryState {
   entries: HistoryEntry[]; // newest first
-  addBuy: (receipt: BuyReceipt, token: FreeRouteToken, tokenId: string) => void;
+  addBuy: (receipt: BuyReceipt, token: FreeRouteToken, tokenId: string, askId: string) => void;
   addSwap: (receipt: SwapReceipt) => void;
   addMint: (receipt: MintReceipt) => void;
   clear: () => void;
@@ -35,7 +35,7 @@ export const useHistory = create<HistoryState>()(
   persist(
     (set) => ({
       entries: [],
-      addBuy: (receipt, token, tokenId) => set((s) => ({ entries: [{ id: ++seq, ts: Date.now(), kind: 'buy', receipt, token, tokenId }, ...s.entries] })),
+      addBuy: (receipt, token, tokenId, askId) => set((s) => ({ entries: [{ id: ++seq, ts: Date.now(), kind: 'buy', receipt, token, tokenId, askId }, ...s.entries] })),
       addSwap: (receipt) => set((s) => ({ entries: [{ id: ++seq, ts: Date.now(), kind: 'swap', receipt }, ...s.entries] })),
       addMint: (receipt) => set((s) => ({ entries: [{ id: ++seq, ts: Date.now(), kind: 'mint', receipt }, ...s.entries] })),
       clear: () => set({ entries: [] }),

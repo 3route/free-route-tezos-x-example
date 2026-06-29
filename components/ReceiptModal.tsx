@@ -1,5 +1,5 @@
 'use client';
-import { fmtUnits, mutezToXtz } from '@/lib/format';
+import { fmtUnits, mutezToXtz, short } from '@/lib/format';
 import { nftName } from '@/lib/names';
 import { CFG } from '@/lib/config';
 import type { FreeRouteToken } from '@baking-bad/free-route-tezos-x';
@@ -30,7 +30,7 @@ function Check({ ok, children }: { ok: boolean; children: React.ReactNode }) {
   );
 }
 
-export function ReceiptModal({ receipt: r, token, tokenId, onClose }: { receipt: BuyReceipt; token: FreeRouteToken; tokenId: string; onClose: () => void }) {
+export function ReceiptModal({ receipt: r, token, tokenId, askId, onClose }: { receipt: BuyReceipt; token: FreeRouteToken; tokenId: string; askId: string; onClose: () => void }) {
   const sym = token.symbol;
   return (
     <div className="fixed inset-0 z-30 grid place-items-center bg-black/60 p-4" onClick={onClose}>
@@ -41,37 +41,53 @@ export function ReceiptModal({ receipt: r, token, tokenId, onClose }: { receipt:
           <div className="min-w-0">
             <div className="font-semibold">Purchase complete</div>
             <div className="truncate text-xs text-slate-500">
-              {nftName(tokenId)} ·{' '}
-              <a className="text-accent hover:underline" href={`${CFG.explorer}/${r.opHash}`} target="_blank" rel="noreferrer">
-                view on tzkt ↗
-              </a>
+              {nftName(tokenId)}
+              {askId && <span className="ml-1 font-mono text-slate-600">· ask {askId}</span>}
             </div>
+            {r.txs?.length ? (
+              <div className="mt-0.5 flex flex-wrap gap-x-2 text-[11px]">
+                {r.txs.map((t) => (
+                  <a key={t.hash} href={`${CFG.evmExplorer}/tx/${t.hash}`} target="_blank" rel="noreferrer" className="text-accent hover:underline" title={t.hash}>
+                    {t.label} ↗
+                  </a>
+                ))}
+              </div>
+            ) : (
+              <a
+                className="text-xs text-accent hover:underline"
+                href={r.evm ? `${CFG.evmExplorer}/tx/${r.opHash}` : `${CFG.explorer}/${r.opHash}`}
+                target="_blank"
+                rel="noreferrer"
+              >
+                view on {r.evm ? 'blockscout' : 'tzkt'} ↗
+              </a>
+            )}
           </div>
         </div>
 
         {/* EVM side — measured */}
         <div className="mb-3 rounded-xl border border-edge bg-ink/40 p-3 text-sm">
-          <div className="label mb-2">EVM Side</div>
+          <div className="label mb-2">pay token</div>
           <div className="space-y-1.5">
-            <Line label={`${sym} paid (alias)`} value={`−${fmtUnits(r.usdcSpent, token.decimals, token.decimals)} ${sym}`} />
+            <Line label={`${sym} paid (${r.evm ? 'evm account' : 'evm alias'})`} value={`−${fmtUnits(r.usdcSpent, token.decimals, token.decimals)} ${sym}`} />
             <div className="flex justify-between font-mono text-xs text-slate-500">
-              <span className="font-sans text-slate-600">alias {sym} balance</span>
+              <span className="font-sans text-slate-600">{sym} balance</span>
               <span>{fmtUnits(r.usdcBefore, token.decimals, token.decimals)} → {fmtUnits(r.usdcAfter, token.decimals, token.decimals)}</span>
             </div>
           </div>
         </div>
 
-        {/* Michelson side — measured */}
+        {/* native-XTZ side — measured (Michelson tz1 for Temple, the EVM account for MetaMask) */}
         <div className="mb-3 rounded-xl border border-edge bg-ink/40 p-3 text-sm">
-          <div className="label mb-2">Michelson Side</div>
+          <div className="label mb-2">native XTZ</div>
           <div className="space-y-1.5">
             <Line label="Change returned" sub={`swap surplus · expected +${xtz(r.expectedChange)} from quote`} value={`+${xtz(r.actualChange)}`} tone="emerald" />
-            <Line label="Network fee" sub="actual paid fee · Σ bakerFee" value={sx(-r.networkFee)} tone="muted" />
+            <Line label="Network fee" sub={r.evm ? 'EVM gas · Σ gasUsed×gasPrice' : 'actual paid fee · Σ bakerFee'} value={sx(-r.networkFee)} tone="muted" />
             <div className="border-t border-edge pt-1.5">
               <Line label="Net XTZ" sub="= change − fee" value={sx(r.xtzNet)} />
             </div>
             <div className="flex justify-between font-mono text-xs text-slate-500">
-              <span className="font-sans text-slate-600">Michelson XTZ balance</span>
+              <span className="font-sans text-slate-600">{r.evm ? 'evm account' : 'michelson account'} XTZ balance</span>
               <span>{xtz(r.xtzBefore)} → {xtz(r.xtzAfter)}</span>
             </div>
             <div className="border-t border-edge pt-1.5">
@@ -88,7 +104,15 @@ export function ReceiptModal({ receipt: r, token, tokenId, onClose }: { receipt:
             {r.actualChange > 0n && (
               <Check ok={r.changeWithinExpected}>Change returned within the quoted estimate (≤ {xtz(r.expectedChange)})</Check>
             )}
-            <Check ok={r.nftOwned}>NFT now owned by your Michelson address</Check>
+            <Check ok={r.nftOwned}>
+              {r.recipient ? (
+                <>
+                  NFT now owned by <span className="font-mono">{short(r.recipient, 6)}</span>
+                </>
+              ) : (
+                <>NFT now owned by your {r.evm ? 'michelson alias' : 'michelson account'}</>
+              )}
+            </Check>
           </ul>
         </div>
 
