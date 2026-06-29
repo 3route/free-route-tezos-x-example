@@ -20,6 +20,11 @@ export function OwnedPanel() {
       <div className="flex items-center justify-between">
         <h2 className="text-lg font-semibold">
           My NFTs <span className="ml-1 text-sm text-slate-500">{owned.length}</span>
+          {aw.kind === 'metamask' && aw.michelsonOwner && (
+            <span className="ml-2 text-[11px] font-normal text-slate-500">
+              on your michelson alias <span className="font-mono">{short(aw.michelsonOwner, 6)}</span>
+            </span>
+          )}
         </h2>
         <button className="btn-ghost" onClick={() => void refresh()}>
           ↻ Refresh
