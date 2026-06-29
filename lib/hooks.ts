@@ -96,10 +96,14 @@ export function useBalances() {
   return { xtz, erc, loading, updatedAt, refresh };
 }
 
-// Live price-currency converter. Pulls ONE exact-out rate (token per 1 XTZ) from the free-route /swap
-// endpoint and applies it to every listing; auto-refreshes every 30s. currency 'XTZ' = no conversion.
-const REF_XTZ_MUTEZ = 1_000_000n; // 1 XTZ
-const REF_XTZ_WEI = xtzMutezToWei(REF_XTZ_MUTEZ); // 1 XTZ in wei (EVM side)
+// Live price-currency converter. Pulls ONE exact-out rate (token per 1 XTZ) and applies it to every listing;
+// auto-refreshes every 30s. currency 'XTZ' = no conversion.
+const REF_XTZ_MUTEZ = 1_000_000n; // 1 XTZ — the rate is normalized to this
+// The rate must be the BUY direction (token -> XTZ, what the modal pays), not the reverse — on thin previewnet
+// pools the two differ by the spread. exact-out CAN'T route a full 1 XTZ there (quote_not_found / HTTP 400), so we
+// probe a small target and scale linearly. The card price is an estimate anyway; the binding amount is the modal.
+const PROBE_XTZ_MUTEZ = 50_000n; // 0.05 XTZ — small enough to route, close to the listing-price scale
+const PROBE_XTZ_WEI = xtzMutezToWei(PROBE_XTZ_MUTEZ);
 
 export function usePriceCurrency(payTokens: FreeRouteToken[]) {
   const currency = useUi((s) => s.currency); // global — shared with the buy modal
@@ -123,10 +127,11 @@ export function usePriceCurrency(payTokens: FreeRouteToken[]) {
     let cancelled = false;
     const fetchRate = async () => {
       try {
-        // a rate quote needs no address — from/receiver are optional on getQuote.
-        const q = await freeRoute.getQuote({ src: token.address, dst: XTZ_ADDRESS, amount: REF_XTZ_WEI, isExactOut: true });
+        // a rate quote needs no address — from/receiver are optional on getQuote. Small exact-out probe in the BUY
+        // direction (token -> XTZ — what the modal pays), scaled to 1 XTZ (see PROBE_XTZ_MUTEZ above).
+        const q = await freeRoute.getQuote({ src: token.address, dst: XTZ_ADDRESS, amount: PROBE_XTZ_WEI, isExactOut: true });
         if (!cancelled) {
-          setRate(q.srcAmount);
+          setRate((q.srcAmount * REF_XTZ_MUTEZ) / PROBE_XTZ_MUTEZ); // token base units per 1 XTZ (buy direction)
           setUpdatedAt(Date.now());
           setError(null);
         }
