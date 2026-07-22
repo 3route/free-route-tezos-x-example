@@ -2,7 +2,7 @@
 // wallet (tezos.wallet.batch). Mirror of lib/opsEvm.ts (the MetaMask / EVM-native side); both produce the SAME
 // BuyDetails / SwapDetails the review modals render.
 //
-//   SELLER   buildMintListOps  — mint N FA2 tokens + list each as an objkt ask (one op-group, auto-chunked)
+//   SELLER   buildMintListOps  — mint N FA2 tokens + list each as an objkt ask (one wallet-estimated group per token)
 //   BUYER    buildBuyBatch     — pay an ERC20 for an XTZ-priced ask (swap → fulfill), one atomic group
 //   BRIDGE   buildSwapBatch    — swap any token → any token
 //
@@ -29,7 +29,6 @@ import { CFG } from './config';
 import { freeRoute } from './freeRoute';
 import { fmtUnits, short } from './format';
 
-const MAX_GAS_PER_BATCH = 2_500_000; // stay safely under the per-op-group ceiling; split if exceeded
 
 // Michelson op builders with our network's call_evm gateway bound in — call .buildSwapOperation without repeating it.
 const michelsonOps = createMichelsonOpsBuilder(CFG.gateway);
@@ -88,43 +87,27 @@ export interface SellerItem {
   priceMutez: number;
 }
 
-// One ordered op list: [mint..., update_operators..., ask...]. The FA2 assigns ids from its next_token_id
-// counter, so token ids are positional: the i-th mint gets `baseTokenId + i` (baseTokenId = next_token_id read
-// just before sending). All mints precede the operator/ask ops so the tokens exist first and chunked sends stay
-// valid. objkt pulls the NFT from the seller on fulfill, hence the per-token update_operators approving it.
-// Note: ids are predicted from baseTokenId — if another account mints into the same FA2 between the read and
-// these ops landing, the predictions shift and the asks reference the wrong tokens. Fine for a single-user demo;
-// the on-chain counter is the real guard (ids never collide).
-export function buildMintListOps(seller: string, items: SellerItem[], baseTokenId: number): ParamsWithKind[] {
-  const tid = (i: number) => baseTokenId + i;
-  const mints: ParamsWithKind[] = items.map(() => ({
-    kind: OpKind.TRANSACTION,
-    to: CFG.fa2,
-    amount: 0,
-    parameter: { entrypoint: 'mint', value: m.string(seller) },
-    gasLimit: 200_000,
-    storageLimit: 500,
-    fee: 30_000,
-  }));
-  const operators: ParamsWithKind[] = items.map((_, i) => ({
-    kind: OpKind.TRANSACTION,
-    to: CFG.fa2,
-    amount: 0,
-    parameter: { entrypoint: 'update_operators', value: addOperatorValue(seller, CFG.objkt, tid(i)) },
-    gasLimit: 200_000,
-    storageLimit: 350,
-    fee: 30_000,
-  }));
-  const asks: ParamsWithKind[] = items.map((it, i) => ({
-    kind: OpKind.TRANSACTION,
-    to: CFG.objkt,
-    amount: 0,
-    parameter: { entrypoint: 'ask', value: askValue(CFG.fa2, tid(i), it.priceMutez, seller) },
-    gasLimit: 400_000,
-    storageLimit: 1_200,
-    fee: 40_000,
-  }));
-  return [...mints, ...operators, ...asks];
+// One self-contained op-GROUP per token: [mint (creates tid) → update_operators (approve objkt) → ask (list)].
+// Returns an array of groups (one per token); sendChunked packs several groups per wallet batch (real cost is
+// only ~13k gas/token, so ~30 fit the 660k per-block ceiling). We leave gas/storage unpinned so they estimate
+// real (the old pins of 200k/200k/400k were ~60× the real gas and blew past the 660k ceiling → `gas_limit_too_high`);
+// pure-Michelson estimation is accurate here (no cross-runtime call_evm ops, which are the ones that need pinning).
+// Groups are sent in order (see sendChunked), so the FA2 counter assigns `baseTokenId + i` and each group's ask
+// references the id its own mint just created.
+// Note: baseTokenId is read just before sending; if another account mints into the same FA2 in between, the
+// predictions shift. Fine for a single-user demo; the on-chain counter is the real guard (ids never collide).
+export function buildMintListOps(seller: string, items: SellerItem[], baseTokenId: number): ParamsWithKind[][] {
+  return items.map((it, i) => {
+    const tid = baseTokenId + i;
+    // Pin ONLY `fee` — the wallet's fee estimation undershoots on previewnet (`insufficient_fees`), but its
+    // gas/storage estimation is accurate. Gas is left unpinned so it estimates real (small) and fits the 660k
+    // per-block ceiling. Fees below are generous headroom over the ~2850 mutez/group the node requires.
+    return [
+      { kind: OpKind.TRANSACTION, to: CFG.fa2, amount: 0, fee: 8_000, parameter: { entrypoint: 'mint', value: m.string(seller) } },
+      { kind: OpKind.TRANSACTION, to: CFG.fa2, amount: 0, fee: 6_000, parameter: { entrypoint: 'update_operators', value: addOperatorValue(seller, CFG.objkt, tid) } },
+      { kind: OpKind.TRANSACTION, to: CFG.objkt, amount: 0, fee: 15_000, parameter: { entrypoint: 'ask', value: askValue(CFG.fa2, tid, it.priceMutez, seller) } },
+    ];
+  });
 }
 
 // ───────────────────────────── BUYER: pay an ERC20 for an XTZ-priced ask ─────────────────────────────
@@ -283,28 +266,23 @@ export async function sendWalletGroup(tezos: TezosToolkit, ops: ParamsWithKind[]
   return op.opHash;
 }
 
-// Send a (potentially large) op list, greedily chunked under the gas ceiling, via the wallet.
+// A mint+list token-group costs only ~13k gas on-chain (mint 1.7k + update_operators 1.5k + ask 10k), so many
+// tokens fit one op-group under the 660k per-block ceiling. Pack up to this many token-groups per wallet batch
+// (30 × ~13k ≈ 390k gas — comfortable headroom under 660k), keeping most mints to a single signature.
+const MAX_TOKENS_PER_BATCH = 30;
+
+// Send per-token op-GROUPS (from buildMintListOps), packed MAX_TOKENS_PER_BATCH per wallet batch. Gas/storage are
+// wallet-estimated (fee is pinned in the builder — the wallet undershoots it). Batches are sent sequentially with
+// confirmation between them so the FA2 counter stays in sync with the predicted ids. Returns one hash per batch.
 export async function sendChunked(
   tezos: TezosToolkit,
-  ops: ParamsWithKind[],
+  groups: ParamsWithKind[][],
   onHash?: (hash: string, idx: number, total: number) => void,
 ): Promise<string[]> {
-  // greedy pack preserving order
   const batches: ParamsWithKind[][] = [];
-  let cur: ParamsWithKind[] = [];
-  let gas = 0;
-  for (const op of ops) {
-    const g = (op as { gasLimit?: number }).gasLimit ?? 0;
-    if (cur.length && gas + g > MAX_GAS_PER_BATCH) {
-      batches.push(cur);
-      cur = [];
-      gas = 0;
-    }
-    cur.push(op);
-    gas += g;
+  for (let i = 0; i < groups.length; i += MAX_TOKENS_PER_BATCH) {
+    batches.push(groups.slice(i, i + MAX_TOKENS_PER_BATCH).flat());
   }
-  if (cur.length) batches.push(cur);
-
   const hashes: string[] = [];
   for (let i = 0; i < batches.length; i++) {
     const op = await tezos.wallet.batch().with(batches[i] as never).send();

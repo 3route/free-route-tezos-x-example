@@ -95,11 +95,12 @@ export function SellerPanel() {
         const txLabels = hashes.length === stepLabels.length ? stepLabels : hashes.length === 1 ? ['atomic batch'] : undefined;
         mintReceipt = { hashes, items: minted, evm: true, txLabels };
       } else {
-        // Temple: one atomic op-group (auto-chunked under the gas ceiling).
+        // Temple: per-token mint+approve+ask groups, wallet-estimated, packed ≤30 per batch under the 660k
+        // per-block gas ceiling (real cost ~13k gas/token). Usually one signature; splits only for large mints.
         const { tezos, michelsonAddress } = aw.temple;
         if (!tezos || !michelsonAddress) return;
-        const ops = buildMintListOps(michelsonAddress, items, base);
-        const hashes = await sendChunked(tezos, ops);
+        const groups = buildMintListOps(michelsonAddress, items, base);
+        const hashes = await sendChunked(tezos, groups);
         mintReceipt = { hashes, items: minted };
       }
 
