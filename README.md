@@ -17,7 +17,9 @@ SDK (consumed as an npm package), on **Tezos X previewnet**. It drives every flo
 - **My NFTs** (`/owned`) — tokens owned by the connected wallet's Michelson holder (your tz1, or the account's KT1 alias on MetaMask).
 
 Signing is client-side (Temple/Beacon · MetaMask/EIP-6963). The free-route **API key stays server-side** — reads are
-proxied through `/api/free-route/*` (the BFF), so the key never reaches the browser.
+proxied through `/api/free-route/*` (the BFF), so the key never reaches the browser. Michelson op-groups are sized on
+the node with the SDK's `estimateMichelsonOperation` right before the wallet prompt (`lib/opsMichelson.ts`
+`sendWalletGroup`) — the `call_evm` ops need a margin over a bare wallet estimate.
 
 **For the full architecture, the server/client key split, and copy-paste SDK examples per flow, see the
 [**Docs** page](https://3route-tezos-x-sdk-demo.vercel.app/docs)** (source: [`app/docs/page.tsx`](app/docs/page.tsx)).

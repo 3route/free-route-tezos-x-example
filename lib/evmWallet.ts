@@ -239,8 +239,9 @@ export const useEvmWallet = create<EvmWalletState>((set, get) => {
       const from = get().evmAddress;
       if (!from) throw new Error('Connect MetaMask first');
       await ensureChain(eth);
-      // Try an EIP-5792 batch first; fall back to sequential when the wallet/chain can't batch. Tezos X previewnet
-      // has no EIP-7702, so MetaMask's atomic wallet_sendCalls errors there — we catch it and send sequentially.
+      // Try an EIP-5792 batch first; fall back to sequential when the wallet can't batch. The chain itself accepts
+      // EIP-7702 (type-4 txs), but MetaMask gates its smart-account upgrade per chain and errors on atomic
+      // wallet_sendCalls here — we catch it and send sequentially.
       try {
         const calls = txs.map((t) => ({ to: t.to, data: t.data, value: toHex(t.value) }));
         const res = await eth.request({

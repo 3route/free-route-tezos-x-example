@@ -90,7 +90,9 @@ const fulfill = objkt.buildMichelsonFulfillAskOperation({
 });
 
 const ops = buildBatchTransaction(swapOps, fulfill);
-const op = await tezos.contract.batch().with(ops).send(); // a single signature
+// size the group on the node (call_evm margin + end-to-end check before signing)
+const readyOps = await freeRoute.michelson.estimateOperation({ tezos, ops });
+const op = await tezos.contract.batch().with(readyOps).send(); // a single signature
 await op.confirmation();`;
 
 const BRIDGE_CODE = `import { TezosToolkit } from '@taquito/taquito';
@@ -148,7 +150,8 @@ const ops = freeRoute.michelson.buildSwapOperation({
   srcAddress: src.address,
   approval,
 });
-const op = await tezos.contract.batch().with(ops).send(); // a single signature
+const readyOps = await freeRoute.michelson.estimateOperation({ tezos, ops }); // size on the node before signing
+const op = await tezos.contract.batch().with(readyOps).send(); // a single signature
 await op.confirmation();`;
 
 const EVM_BUYER_CODE = `import {

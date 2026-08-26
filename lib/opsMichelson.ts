@@ -16,6 +16,7 @@ import {
   XTZ,
   buildBatchTransaction,
   createMichelsonOpsBuilder,
+  estimateMichelsonOperation,
   fromEvmUnits,
   isXtz,
   michelsonToEvmAlias,
@@ -91,7 +92,8 @@ export interface SellerItem {
 // Returns an array of groups (one per token); sendChunked packs several groups per wallet batch (real cost is
 // only ~13k gas/token, so ~30 fit the 660k per-block ceiling). We leave gas/storage unpinned so they estimate
 // real (the old pins of 200k/200k/400k were ~60× the real gas and blew past the 660k ceiling → `gas_limit_too_high`);
-// pure-Michelson estimation is accurate here (no cross-runtime call_evm ops, which are the ones that need pinning).
+// pure-Michelson estimation is accurate here (no cross-runtime call_evm ops — those need the SDK's pins or
+// estimateMichelsonOperation, see sendWalletGroup).
 // Groups are sent in order (see sendChunked), so the FA2 counter assigns `baseTokenId + i` and each group's ask
 // references the id its own mint just created.
 // Note: baseTokenId is read just before sending; if another account mints into the same FA2 in between, the
@@ -259,9 +261,12 @@ export async function buildSwapBatch(
 }
 
 // ───────────────────────────── send ─────────────────────────────
-// Send a prepared op group as ONE atomic wallet batch (the buy must stay atomic — never chunked).
+// Size a prepared op group on the node (the SDK's call_evm margin — a bare wallet estimate undershoots the
+// cross-runtime call — and an end-to-end check of the group before the wallet prompt), then send it as ONE atomic
+// wallet batch (the buy must stay atomic — never chunked). The wallet-backed toolkit works for estimation too.
 export async function sendWalletGroup(tezos: TezosToolkit, ops: ParamsWithKind[]): Promise<string> {
-  const op = await tezos.wallet.batch().with(ops as never).send();
+  const readyOps = await estimateMichelsonOperation({ tezos, ops });
+  const op = await tezos.wallet.batch().with(readyOps as never).send();
   await op.confirmation();
   return op.opHash;
 }
