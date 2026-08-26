@@ -365,7 +365,11 @@ export default async function DocsPage() {
             <span className="text-slate-300">Michelson-native</span> (your tz1 signs) — the op-group calls the EVM-side
             router via <span className="font-mono text-slate-300">call_evm</span> as your{' '}
             <span className="text-slate-300">evm alias</span>; the swap’s native-XTZ output auto-forwards to your tz1,
-            which then funds a Michelson op (e.g. the marketplace fulfill). One atomic, single-signature group.
+            which then funds a Michelson op (e.g. the marketplace fulfill). One atomic, single-signature group. Before
+            the wallet prompt the group is sized on the node with{' '}
+            <span className="font-mono text-slate-300">estimateOperation</span> — the{' '}
+            <span className="font-mono text-slate-300">call_evm</span> ops need a margin over a bare wallet estimate,
+            and a group that would revert (e.g. the ask is gone) fails here, before signing.
           </li>
           <li>
             <span className="text-slate-300">EVM-native</span> (your 0x signs) — the{' '}
