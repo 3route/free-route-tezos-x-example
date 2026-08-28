@@ -120,7 +120,9 @@ export function BridgePanel() {
   return (
     <div className="mx-auto max-w-md space-y-4">
       <div className="flex items-center justify-between">
-        <h2 className="text-lg font-semibold">Bridge · swap balance</h2>
+        <h2 className="text-lg font-semibold">
+          Bridge · swap balance <span className="ml-1 rounded-md bg-amber-500/15 px-1.5 py-0.5 align-middle text-[11px] font-medium text-amber-300">testnet</span>
+        </h2>
         <a href={CFG.faucet} target="_blank" rel="noreferrer" className={`btn-ghost text-xs ${lowXtz ? 'animate-pulse border-accent text-accent' : ''}`}>
           Get XTZ ↗
         </a>
@@ -173,6 +175,7 @@ export function BridgePanel() {
         {(previewing || refreshInSec !== null) && (
           <p className="text-[11px] text-slate-500">quote via free-route{previewing ? ' · updating…' : ` · updating in ${refreshInSec}s`}</p>
         )}
+        <p className="text-[11px] text-amber-400/90">Previewnet · test assets, not real tokens · thin liquidity, high price impact · not a market price.</p>
 
         {insufficient && <div className="text-xs text-amber-400">Insufficient {fromTok?.symbol} balance.</div>}
 
