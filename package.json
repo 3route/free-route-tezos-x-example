@@ -1,9 +1,9 @@
 {
-  "name": "objkt-evm-pay-dapp",
+  "name": "3route-tezos-x-sdk-demo",
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Demo dApp for the pure-SDK: seller mints+lists NFTs, buyer pays any EVM ERC20 for an XTZ-priced objkt NFT (Temple-signed, one atomic op-group).",
+  "description": "Demo dApp for the pure-SDK: seller mints+lists NFTs, buyer pays any EVM ERC20 for an XTZ-priced NFT listed on an objkt-style marketplace (Temple-signed, one atomic op-group).",
   "scripts": {
     "dev": "next dev -p 3001",
     "build": "next build",

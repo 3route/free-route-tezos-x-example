@@ -191,7 +191,7 @@ export async function buildBuyBatch(
     steps: [
       ...approveSteps(approval, srcAmount, payToken),
       { kind: 'swap', detail: 'call_evm(router.swap()) —XTZ→ your michelson account' },
-      { kind: 'fulfill_ask', detail: `objkt.fulfill_ask() —NFT→ ${nftTo}` },
+      { kind: 'fulfill_ask', detail: `marketplace.fulfill_ask() —NFT→ ${nftTo}` },
     ],
   };
   return { ops, details };

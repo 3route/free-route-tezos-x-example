@@ -91,7 +91,7 @@ export function ReceiptModal({ receipt: r, token, tokenId, askId, onClose }: { r
               <span>{xtz(r.xtzBefore)} → {xtz(r.xtzAfter)}</span>
             </div>
             <div className="border-t border-edge pt-1.5">
-              <Line label="Buyer → objkt (fulfill_ask)" sub="XTZ you sent to the marketplace · funded by the swap" value={xtz(r.fulfillAmount)} />
+              <Line label="Buyer → marketplace (fulfill_ask)" sub="XTZ you sent to the marketplace · funded by the swap" value={xtz(r.fulfillAmount)} />
             </div>
           </div>
         </div>

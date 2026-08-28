@@ -29,7 +29,7 @@ export function MintReceiptModal({ receipt: r, onClose }: { receipt: MintReceipt
           <div className="label mb-2">Summary</div>
           <div className="space-y-1.5">
             <div className="flex items-start justify-between gap-3">
-              <span className="text-slate-400">Minted &amp; listed on objkt</span>
+              <span className="text-slate-400">Minted &amp; listed on the marketplace (objkt-style ask)</span>
               <span className="shrink-0 font-mono">{r.items.length}</span>
             </div>
             <div className="flex items-start justify-between gap-3">

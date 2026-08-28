@@ -35,7 +35,7 @@ export const useWallet = create<WalletState>((set, get) => {
   const getWallet = (): BeaconWallet => {
     if (singleton) return singleton;
     const wallet = new BeaconWallet({
-      name: 'objkt EVM-pay',
+      name: '3Route Tezos X · SDK demo',
       // previewnet is a custom network for the wallet (set at instantiation, not in requestPermissions).
       network: { type: 'custom' as never, name: NETWORK_NAME, rpcUrl: CFG.tezRpc },
       colorMode: ColorMode.DARK, // match the dApp's dark theme in the Beacon pairing/permission UI

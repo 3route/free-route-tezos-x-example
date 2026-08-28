@@ -212,7 +212,7 @@ export function buildEvmMintListBatch(
     txs.push(callMichelson(CFG.fa2, 'mint', m.string(seller), MINT_TYPE));
     stepLabels.push(`mint #${id}`);
     txs.push(callMichelson(CFG.fa2, 'update_operators', addOperatorValue(seller, CFG.objkt, id), UPDATE_OPERATORS_TYPE));
-    stepLabels.push(`approve objkt #${id}`);
+    stepLabels.push(`approve marketplace #${id}`);
     txs.push(callMichelson(CFG.objkt, 'ask', askValue(CFG.fa2, id, it.priceMutez, seller), ASK_TYPE));
     stepLabels.push(`list #${id}`);
   });

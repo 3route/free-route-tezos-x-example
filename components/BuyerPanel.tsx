@@ -180,7 +180,7 @@ export function BuyerPanel() {
               {isOwn ? (
                 <button
                   disabled
-                  title="objkt blocks buying your own listing (M_NO_SELF_FULFILL) — connect a different account to buy"
+                  title="The marketplace contract blocks buying your own listing (M_NO_SELF_FULFILL) — connect a different account to buy"
                   className="btn-primary mt-2 flex-col gap-0 py-2! leading-tight cursor-not-allowed opacity-50"
                 >
                   <span>Your listing</span>

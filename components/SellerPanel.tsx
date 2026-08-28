@@ -190,13 +190,13 @@ export function SellerPanel() {
               aw.kind === 'metamask'
                 ? [
                     'callMichelson(fa2.mint()) —NFT→ your michelson alias',
-                    'callMichelson(fa2.update_operators(objkt))',
-                    'callMichelson(objkt.ask())',
+                    'callMichelson(fa2.update_operators(marketplace))',
+                    'callMichelson(marketplace.ask())',
                   ]
                 : [
                     'fa2.mint() —NFT→ your michelson account',
-                    'fa2.update_operators(objkt)',
-                    'objkt.ask()',
+                    'fa2.update_operators(marketplace)',
+                    'marketplace.ask()',
                   ];
             // MetaMask signs the 3N txs one by one — map the live index to the active op (i % 3) and NFT (i / 3).
             const activeOp = signing ? signing.i % 3 : -1;
@@ -223,11 +223,11 @@ export function SellerPanel() {
           })()}
         {status && <p className={`mt-3 text-xs ${status.ok ? 'text-accent2' : 'text-rose-400'}`}>{status.msg}</p>}
         <p className="mt-3 text-xs text-slate-500">
-          Mints fresh tokens into the test FA2 and lists each as an XTZ-priced ask on objkt. Names are generated; prices
+          Mints fresh tokens into the test FA2 and lists each as an XTZ-priced ask on the objkt-style marketplace contract. Names are generated; prices
           are editable per item.
         </p>
         <p className="mt-3 rounded-lg border border-amber-400/30 bg-amber-400/10 px-3 py-2 text-xs text-amber-300">
-          ⚠️ objkt blocks buying your own listing (<span className="font-mono">M_NO_SELF_FULFILL</span>). To test a purchase,
+          ⚠️ The marketplace contract blocks buying your own listing (<span className="font-mono">M_NO_SELF_FULFILL</span>). To test a purchase,
           switch to Buyer mode <span className="font-medium">with a different account</span> than the one that listed these.
         </p>
       </div>

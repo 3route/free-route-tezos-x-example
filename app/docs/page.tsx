@@ -277,7 +277,7 @@ const PAGES: PageDoc[] = [
     title: 'Buyer',
     href: '/buyer',
     blurb:
-      'Pay any EVM ERC20 for an XTZ-priced objkt NFT — swap to XTZ, then fulfill the ask, composed into one signed batch. From Temple it’s a single-signature Michelson op-group; from MetaMask, an EVM tx batch that reaches objkt via callMichelson. The NFT goes to the signer by default, or to any Michelson address you pass as the objkt proxy_for (the optional recipient).',
+      'Pay any EVM ERC20 for an XTZ-priced NFT on an objkt-style marketplace — swap to XTZ, then fulfill the ask, composed into one signed batch. From Temple it’s a single-signature Michelson op-group; from MetaMask, an EVM tx batch that reaches objkt via callMichelson. The NFT goes to the signer by default, or to any Michelson address you pass as the objkt proxy_for (the optional recipient).',
     code: BUYER_CODE,
   },
   {
@@ -291,7 +291,7 @@ const PAGES: PageDoc[] = [
     title: 'Seller',
     href: '/seller',
     blurb:
-      'Mints test NFTs and lists each as an XTZ-priced ask on objkt, so the Buyer page has something to purchase. Supporting flow for the demo.',
+      'Mints test NFTs and lists each as an XTZ-priced ask on the objkt-style marketplace contract, so the Buyer page has something to purchase. Supporting flow for the demo.',
   },
   {
     title: 'My NFTs',
@@ -322,6 +322,12 @@ export default async function DocsPage() {
         <span className="font-mono">@baking-bad/free-route-tezos-x</span> SDK — it is not audited or hardened for real
         use. Running it against mainnet is entirely at your own risk.
       </div>
+      <div className="rounded-xl border border-amber-400/30 bg-amber-400/10 px-4 py-3 text-sm text-amber-200">
+        <span className="font-semibold">⚠️ Not affiliated with objkt.</span> This demo is not affiliated with, sponsored, or
+        endorsed by objkt.com. “objkt” here refers to the objkt marketplace contract interface (
+        <span className="font-mono">ask</span> / <span className="font-mono">fulfill_ask</span>) this demo integrates with;
+        on previewnet it talks to a <span className="font-semibold">self-deployed copy</span> of that contract, not to objkt.com.
+      </div>
 
       {/* intro */}
       <div className="card">
@@ -340,7 +346,7 @@ export default async function DocsPage() {
           <a className="text-accent hover:underline" href="/buyer">
             paying any ERC20 for an XTZ-priced asset
           </a>{' '}
-          (e.g. an objkt NFT), composed into ready-to-sign ops. Either flow can be driven from <span className="text-slate-300">either side</span> — a
+          (e.g. an NFT listed on an objkt-style marketplace), composed into ready-to-sign ops. Either flow can be driven from <span className="text-slate-300">either side</span> — a
           Michelson op-group (Temple) or an EVM tx batch (MetaMask).
         </p>
         <div className="mt-4 flex flex-wrap gap-2">

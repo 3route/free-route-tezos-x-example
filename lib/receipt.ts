@@ -338,5 +338,5 @@ export interface MintReceipt {
   hashes: string[]; // Temple: one per chunked op-group · MetaMask: one per callMichelson tx (mint / approve / list)
   items: MintReceiptItem[];
   evm?: boolean; // true = MetaMask path (hashes are EVM txs → blockscout). Default false = Michelson ops (tzkt).
-  txLabels?: string[]; // EVM: per-tx step label (mint #id / approve objkt #id / list #id), parallel to hashes
+  txLabels?: string[]; // EVM: per-tx step label (mint #id / approve marketplace #id / list #id), parallel to hashes
 }
