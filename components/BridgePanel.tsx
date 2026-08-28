@@ -130,7 +130,7 @@ export function BridgePanel() {
 
       <div className="card space-y-3">
         {/* From */}
-        <div className="rounded-xl border border-edge bg-ink/40 p-3">
+        <div className={`rounded-xl border bg-ink/40 p-3 ${insufficient ? 'border-rose-400/40' : 'border-edge'}`}>
           <div className="mb-1.5 flex items-center justify-between text-xs text-slate-500">
             <span className="label">From</span>
             {fromTok && (
@@ -149,6 +149,7 @@ export function BridgePanel() {
             />
             {tokenSelect(fromAddr, pickFrom)}
           </div>
+          {insufficient && <p className="mt-1.5 text-xs text-rose-400">Insufficient {fromTok?.symbol} balance.</p>}
         </div>
 
         {/* flip */}
@@ -176,8 +177,6 @@ export function BridgePanel() {
           <p className="text-[11px] text-slate-500">quote via free-route{previewing ? ' · updating…' : ` · updating in ${refreshInSec}s`}</p>
         )}
         <p className="text-[11px] text-amber-400/90">Previewnet · test assets, not real tokens · thin liquidity, high price impact · not a market price.</p>
-
-        {insufficient && <div className="text-xs text-amber-400">Insufficient {fromTok?.symbol} balance.</div>}
 
         {connected ? (
           <button className="btn-primary w-full" disabled={!canReview} onClick={() => setOpen(true)}>
