@@ -14,10 +14,11 @@ export const CFG = {
   faucet: process.env.NEXT_PUBLIC_FAUCET ?? 'https://faucet.previewnet.tezosx.nomadic-labs.com', // funds tz1 + 0x with testnet XTZ
 } as const;
 
-// 0xTzKT explorer routes — Michelson and EVM alike (an EVM tx hash works at /operations/<0x…>). The asset page (/assets/<KT1>/<id>) isn't live yet, so NFTs link to the FA2.
+// 0xTzKT explorer routes — Michelson and EVM alike (an EVM tx hash works at /operations/<0x…>).
 export const explorerAccount = (address: string) => `${CFG.explorer}/accounts/${address}`;
 export const explorerOp = (opHash: string) => `${CFG.explorer}/operations/${opHash}`;
-export const explorerNft = (contract: string, _tokenId: string | number) => explorerAccount(contract);
+// NFT instance page; 0xTzKT still shows a placeholder there (preview), the route is the canonical one.
+export const explorerNft = (contract: string, tokenId: string | number) => `${CFG.explorer}/assets/${contract}/${tokenId}`;
 
 export const NETWORK_NAME = 'Tezos X Previewnet';
 export const DEFAULT_SLIPPAGE_BPS = 50; // 0.5% — initial value for the global slippage state (Uniswap/Pancake default)
