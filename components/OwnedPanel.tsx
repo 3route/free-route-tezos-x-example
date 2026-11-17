@@ -3,7 +3,7 @@ import { useOwned } from '@/lib/hooks';
 import { useActiveWallet } from '@/lib/account';
 import { nftName } from '@/lib/names';
 import { short } from '@/lib/format';
-import { CFG } from '@/lib/config';
+import { CFG, explorerNft } from '@/lib/config';
 import { NftArt } from './NftArt';
 
 export function OwnedPanel() {
@@ -49,7 +49,7 @@ export function OwnedPanel() {
               </span>
             </div>
             <a
-              href={`${CFG.explorer}/${CFG.fa2}/tokens/${o.tokenId}/transfers`}
+              href={explorerNft(CFG.fa2, o.tokenId)}
               target="_blank"
               rel="noreferrer"
               className="mt-3 text-xs text-accent hover:underline"

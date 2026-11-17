@@ -1,7 +1,7 @@
 'use client';
 import { fmtUnits, short } from '@/lib/format';
 import { isXtz } from '@baking-bad/free-route-tezos-x';
-import { CFG } from '@/lib/config';
+import { explorerOp } from '@/lib/config';
 import type { SwapReceipt } from '@/lib/receipt';
 
 const amt = (v: bigint, decimals: number, sym: string) => `${fmtUnits(v, decimals, decimals)} ${sym}`;
@@ -45,7 +45,7 @@ export function SwapReceiptModal({ receipt: r, onClose }: { receipt: SwapReceipt
             {r.txs?.length ? (
               <div className="mt-0.5 flex flex-wrap gap-x-2 text-[11px]">
                 {r.txs.map((t) => (
-                  <a key={t.hash} href={`${CFG.evmExplorer}/tx/${t.hash}`} target="_blank" rel="noreferrer" className="text-accent hover:underline" title={t.hash}>
+                  <a key={t.hash} href={explorerOp(t.hash)} target="_blank" rel="noreferrer" className="text-accent hover:underline" title={t.hash}>
                     {t.label} ↗
                   </a>
                 ))}
@@ -53,11 +53,11 @@ export function SwapReceiptModal({ receipt: r, onClose }: { receipt: SwapReceipt
             ) : (
               <a
                 className="text-xs text-accent hover:underline"
-                href={r.evm ? `${CFG.evmExplorer}/tx/${r.opHash}` : `${CFG.explorer}/${r.opHash}`}
+                href={explorerOp(r.opHash)}
                 target="_blank"
                 rel="noreferrer"
               >
-                view on {r.evm ? 'blockscout' : 'tzkt'} ↗
+                view on explorer ↗
               </a>
             )}
           </div>

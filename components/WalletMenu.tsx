@@ -3,10 +3,10 @@ import { useEffect, useRef, useState } from 'react';
 import { useActiveWallet } from '@/lib/account';
 import { BALANCES_REFRESH_MS, useBalances, useTokens } from '@/lib/hooks';
 import { fmtUnits, short } from '@/lib/format';
-import { CFG } from '@/lib/config';
+import { explorerAccount } from '@/lib/config';
 
-const tzktLink = (a: string) => `${CFG.explorer}/${a}`;
-const evmLink = (a: string) => `${CFG.evmExplorer}/address/${a}`;
+const tzktLink = explorerAccount;
+const evmLink = explorerAccount;
 
 // Tiny copy-to-clipboard button (shows a check for ~1.2s after copying).
 function CopyButton({ value }: { value: string }) {

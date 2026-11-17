@@ -43,7 +43,7 @@ export interface BuyReceipt {
   changeWithinExpected: boolean; // actualChange <= expectedChange (didn't over-fund beyond the quote)
   nftOwned: boolean; // FA2 ledger: token now owned by the expected recipient (buyer by default)
   recipient?: string; // set only when the NFT was directed elsewhere (objkt proxy_for) — for the receipt's owner line
-  evm?: boolean; // true = MetaMask path (opHash is an EVM tx; link to blockscout). Default false = Michelson op (tzkt).
+  evm?: boolean; // true = MetaMask path (opHash is an EVM tx; link to the explorer). Default false = Michelson op (tzkt).
   txs?: { label: string; hash: string }[]; // EVM sequential path: every tx (approve / swap / fulfill) with its step label
 }
 
@@ -124,7 +124,7 @@ export async function buildBuyReceipt(params: {
 
 // EVM (MetaMask) variant of the buy receipt — same measured fields, read from the EVM side: the pay-token + native
 // XTZ on the 0x account, fee = Σ gasUsed×gasPrice. The NFT lands on the account's KT1 alias (Michelson), so the
-// ownership check polls the FA2 ledger for that alias. opHash = the fulfill tx (linked to blockscout).
+// ownership check polls the FA2 ledger for that alias. opHash = the fulfill tx (linked to the explorer).
 export async function buildEvmBuyReceipt(params: {
   hashes: string[];
   stepLabels: string[]; // per-tx step kind (approve / swap / fulfill_ask), parallel to hashes
@@ -199,7 +199,7 @@ export interface SwapReceipt {
   minOut: bigint; // SwapDetails.minOut
   paidAsQuoted: boolean; // srcSpent === quotedPay
   receivedAtLeastMin: boolean; // dstReceived >= minOut
-  evm?: boolean; // true = MetaMask path (opHash is an EVM tx; link to blockscout). Default false = Michelson op (tzkt).
+  evm?: boolean; // true = MetaMask path (opHash is an EVM tx; link to the explorer). Default false = Michelson op (tzkt).
   txs?: { label: string; hash: string }[]; // EVM sequential path: every tx (approve / swap / …) with its step label
   recipient?: string; // when set, the output was directed to this 0x address instead of the signer's own holder
 }
@@ -264,7 +264,7 @@ export async function buildSwapReceipt(params: {
 
 // EVM (MetaMask) variant of the swap receipt — same measured fields, read from the EVM side: native XTZ via
 // eth_getBalance (the account also pays gas in XTZ, added back to isolate the swap), ERC20s via balanceOf, and
-// the fee = Σ gasUsed×gasPrice over the sent txs. opHash = the final tx (the swap), linked to blockscout.
+// the fee = Σ gasUsed×gasPrice over the sent txs. opHash = the final tx (the swap), linked to the explorer.
 export async function buildEvmSwapReceipt(params: {
   hashes: string[];
   stepLabels: string[]; // per-tx step kind (approve / swap / …), parallel to hashes
@@ -337,6 +337,6 @@ export interface MintReceiptItem {
 export interface MintReceipt {
   hashes: string[]; // Temple: one per chunked op-group · MetaMask: one per callMichelson tx (mint / approve / list)
   items: MintReceiptItem[];
-  evm?: boolean; // true = MetaMask path (hashes are EVM txs → blockscout). Default false = Michelson ops (tzkt).
+  evm?: boolean; // true = MetaMask path (hashes are EVM txs → the explorer). Default false = Michelson ops (tzkt).
   txLabels?: string[]; // EVM: per-tx step label (mint #id / approve marketplace #id / list #id), parallel to hashes
 }

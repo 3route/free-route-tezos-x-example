@@ -1,6 +1,6 @@
 'use client';
 import { mutezToXtz } from '@/lib/format';
-import { CFG } from '@/lib/config';
+import { explorerOp } from '@/lib/config';
 import type { MintReceipt } from '@/lib/receipt';
 
 const xtz = (mutez: number) => `${mutezToXtz(mutez, 6)} XTZ`;
@@ -71,13 +71,13 @@ export function MintReceiptModal({ receipt: r, onClose }: { receipt: MintReceipt
               <a
                 key={h}
                 className="flex items-center justify-between gap-3 font-mono text-xs text-accent hover:underline"
-                href={r.evm ? `${CFG.evmExplorer}/tx/${h}` : `${CFG.explorer}/${h}`}
+                href={explorerOp(h)}
                 target="_blank"
                 rel="noreferrer"
                 title={h}
               >
                 <span className="truncate">{h}</span>
-                <span className="shrink-0 text-slate-500">{r.txLabels?.[i] ? `${r.txLabels[i]} ↗` : r.evm ? 'tx ↗' : r.hashes.length > 1 ? `batch ${i + 1} ↗` : 'view on tzkt ↗'}</span>
+                <span className="shrink-0 text-slate-500">{r.txLabels?.[i] ? `${r.txLabels[i]} ↗` : r.evm ? 'tx ↗' : r.hashes.length > 1 ? `batch ${i + 1} ↗` : 'view on explorer ↗'}</span>
               </a>
             ))}
           </div>

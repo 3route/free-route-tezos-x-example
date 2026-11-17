@@ -1,10 +1,10 @@
 'use client';
 // Fallback success modal — shown when the action confirmed on-chain but the measured receipt couldn't be built
 // (tzkt indexer lag), or for the EVM path which has no Michelson receipt. Always gives the user explorer links.
-import { CFG } from '@/lib/config';
+import { explorerOp } from '@/lib/config';
 
 export function SubmittedModal({ title, note, hashes, evm, onClose }: { title: string; note: string; hashes: string[]; evm: boolean; onClose: () => void }) {
-  const link = (h: string) => (evm ? `${CFG.evmExplorer}/tx/${h}` : `${CFG.explorer}/${h}`);
+  const link = (h: string) => explorerOp(h);
   return (
     <div className="fixed inset-0 z-30 grid place-items-center bg-black/60 p-4" onClick={onClose}>
       <div className="card w-full max-w-md" onClick={(e) => e.stopPropagation()}>
