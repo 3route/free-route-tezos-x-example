@@ -2,7 +2,7 @@
 import { create } from 'zustand';
 import { TezosToolkit } from '@taquito/taquito';
 import { BeaconWallet } from '@taquito/beacon-wallet';
-import { BeaconEvent, ColorMode } from '@airgap/beacon-dapp';
+import { BeaconEvent, ColorMode } from '@ecadlabs/beacon-dapp';
 import { CFG, NETWORK_NAME } from './config';
 import { michelsonToEvmAlias } from '@baking-bad/free-route-tezos-x';
 import { setLastKind } from './activeKind';
